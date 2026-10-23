@@ -13,7 +13,7 @@ using System.Windows.Forms;
 namespace ShokoMpcWindows
 {
     public sealed class Settings { public string ServerUrl { get; set; } public string PlayerPath { get; set; } }
-    public sealed class Resolved { public string[] paths { get; set; } }
+    public sealed class Resolved { public string[] paths { get; set; } public string[] namedPaths { get; set; } }
     public static class Protocol
     {
         public static Uri NormalizeServer(string value)
@@ -49,8 +49,12 @@ namespace ShokoMpcWindows
         }
         public static string MediaUrl(string server, string path)
         {
-            if (!Regex.IsMatch(path ?? "", "\\A/api/plugin/ShokoMpc/stream/[a-f0-9]{64}\\z"))
+            var match = Regex.Match(path ?? "", "\\A/api/plugin/ShokoMpc/stream/[a-f0-9]{64}(?:/([A-Za-z0-9._~-]|%[0-9A-Fa-f]{2})+)?\\z");
+            if (!match.Success || path.Length > 8192)
                 throw new ArgumentException("The server returned an invalid video path.");
+            var name = Uri.UnescapeDataString(path.Substring(path.LastIndexOf('/') + 1));
+            if (name == "." || name == ".." || name.Any(c => Char.IsControl(c) || "<>:\"/\\|?*%".IndexOf(c) >= 0))
+                throw new ArgumentException("The server returned an invalid video filename.");
             return NormalizeServer(server).AbsoluteUri.TrimEnd('/') + path;
         }
         public static string Quote(string value)
@@ -88,9 +92,10 @@ namespace ShokoMpcWindows
                             ? "The play link expired or was already used. Click Play again in Shoko."
                             : "Shoko could not open the video (HTTP " + (int)response.StatusCode + "). Check that the plugin is installed and the server is reachable.");
                     var resolved = serializer.Deserialize<Resolved>(response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
-                    if (resolved.paths == null || resolved.paths.Length < 1 || resolved.paths.Length > 16)
+                    var paths = resolved.namedPaths ?? resolved.paths;
+                    if (paths == null || paths.Length < 1 || paths.Length > 16)
                         throw new InvalidOperationException("The server returned no playable video.");
-                    var arguments = String.Join(" ", resolved.paths.Select(p => Protocol.Quote(Protocol.MediaUrl(server, p)))) + " /play";
+                    var arguments = String.Join(" ", paths.Select(p => Protocol.Quote(Protocol.MediaUrl(server, p)))) + " /play";
                     Process.Start(new ProcessStartInfo(player, arguments) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(player) });
                 }
                 return 0;

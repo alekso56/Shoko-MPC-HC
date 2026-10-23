@@ -19,6 +19,10 @@ public class WindowsProtocolTests
         Reject(link.Replace("play/", "play:123/"), server); Reject(link.Replace("play/", "play/other"), server);
         Reject(link.Replace("shoko-mpc:", "https:"), server); Reject(link + "\" /help", server);
         Check(Protocol.MediaUrl(server, "/api/plugin/ShokoMpc/stream/" + ticket) == server + "/api/plugin/ShokoMpc/stream/" + ticket, "same origin stream URL");
+        var named = "/api/plugin/ShokoMpc/stream/" + ticket + "/" + Uri.EscapeDataString("[Group] Show - 01 日本語.mkv");
+        Check(Protocol.MediaUrl(server, named) == server + named, "named Unicode stream URL");
+        foreach (var suffix in new[] { "..", "%2E%2E", "%2Fother", "%5Cother", "%252Fother", "%22%20%2Fhelp", "x?command=1", "x#fragment", "%0Aheader", "%xx" })
+        { try { Protocol.MediaUrl(server, "/api/plugin/ShokoMpc/stream/" + ticket + "/" + suffix); } catch (ArgumentException) { passed++; continue; } throw new Exception("Invalid filename accepted: " + suffix); }
         foreach (var path in new[] { "https://evil.test/", "/api/plugin/ShokoMpc/stream/../../x", "\\\\host\\file", "/api/plugin/ShokoMpc/stream/" + ticket + "?command=1" })
         { try { Protocol.MediaUrl(server, path); } catch (ArgumentException) { passed++; continue; } throw new Exception("Invalid media path accepted"); }
         Check(Protocol.Quote("http://localhost/a") == "\"http://localhost/a\"", "player URL quoted");

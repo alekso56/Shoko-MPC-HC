@@ -31,5 +31,6 @@ public sealed class Plugin : IPlugin, IPluginServiceRegistration, IPluginApplica
             routes.MapPost(BasePath + "/resolve/{token}", PlaybackEndpoints.Resolve);
             routes.MapGet(BasePath + "/stream/{token}", PlaybackEndpoints.Stream);
             routes.MapMethods(BasePath + "/stream/{token}", ["HEAD"], PlaybackEndpoints.Stream);
+            routes.MapMethods(BasePath + "/stream/{token}/{filename}", ["GET", "HEAD"], PlaybackEndpoints.Stream);
         });
 }

@@ -9,6 +9,13 @@ namespace ShokoMpc;
 
 public static class PlaybackEndpoints
 {
+    public static string DisplayFileName(IVideo video)
+    {
+        // Metadata is a display label only. It never chooses a file on disk.
+        var name = (video.EarliestKnownName ?? "").Replace('\\', '/').Split('/').Last();
+        name = new string(name.Select(ch => char.IsControl(ch) || "<>:\"/\\|?*%".Contains(ch) ? '_' : ch).ToArray()).Trim(' ', '.');
+        return string.IsNullOrWhiteSpace(name) ? $"Shoko video {video.LocalID}.mkv" : name;
+    }
     public sealed record LaunchRequest(int[] FileIds);
     public static bool CanPlay(IUser? user, IVideo? video) => user is not null && video is not null
         && video.Series.Count > 0 && video.Series.All(user.IsAllowedToSee);
@@ -67,7 +74,9 @@ public static class PlaybackEndpoints
         try
         {
             var paths = grant.FileIds.Select(id => Plugin.BasePath + "/stream/" + tokens.IssueStream(grant.UserId, id)).ToArray();
-            await c.Response.WriteAsJsonAsync(new { paths, expiresInHours = 12 });
+            // Keep token-only paths for older Windows handlers; updated handlers prefer the labelled paths.
+            var namedPaths = paths.Select((path, index) => path + "/" + Uri.EscapeDataString(DisplayFileName(videos.GetVideoByID(grant.FileIds[index])!))).ToArray();
+            await c.Response.WriteAsJsonAsync(new { paths, namedPaths, expiresInHours = 12 });
         }
         catch (InvalidOperationException e) { await Error(c, 429, e.Message); }
     }

@@ -33,6 +33,10 @@ Accept the browser's external-application prompt. Some browsers need a second
 gesture: use Open MPC-HC in the notification. Browser prompts cannot be
 disabled by the server plugin. The Windows handler launches MPC-HC directly.
 Multi-part episodes pass all parts to the player's playlist.
+From version 0.1.2, the player receives a stream URL ending in the original
+video filename, so its title bar can display the filename instead of a token.
+Existing installations should update the server plugin and run Windows Setup
+once more. Older Windows handlers remain compatible but keep token-only URLs.
 
 SECURITY AND LIMITATIONS
 The server uses your existing Shoko browser session for launch authorization.
