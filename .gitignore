@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+**/node_modules/
+artifacts/
+ShokoMpc/Windows/Windows-Setup.zip
+Windows/*.exe
+*.md
+*.log
+settings.json
+.env
