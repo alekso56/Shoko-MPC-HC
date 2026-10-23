@@ -16,7 +16,7 @@
     {
       "version": "0.1.2",
       "tag": "v0.1.2",
-      "source_revision": null,
+      "source_revision": "e2f5e25378a89972816cb972d997c2d7225620e9",
       "released_at": "2026-10-24T00:00:00Z",
       "channel": "Stable",
       "release_notes": "Show readable filenames in MPC-HC. Update Windows Setup for named streams. Targets Shoko 6 dev.550 / Abstractions alpha.112. Requires one-time Windows setup. No watch-state sync or external subtitle handoff.",
