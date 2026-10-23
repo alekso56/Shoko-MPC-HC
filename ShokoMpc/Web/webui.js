@@ -10,7 +10,12 @@
   let scheduled = false;
   let frame = 0;
   function key() {
-    try { return JSON.parse(localStorage.getItem('apiSession') || '{}').apikey || ''; }
+    try {
+      const state = JSON.parse(sessionStorage.getItem('state') || '{}');
+      // Current tab state takes precedence, including an explicitly signed-out session.
+      if (state.apiSession) return state.apiSession.apikey || '';
+      return JSON.parse(localStorage.getItem('apiSession') || '{}').apikey || '';
+    }
     catch { return ''; }
   }
   async function request(path, options = {}) {
