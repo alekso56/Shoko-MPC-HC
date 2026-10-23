@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "jsdom": "^26.1.0"
+  },
+  "scripts": {
+    "test": "node ui.cjs"
+  },
+  "private": true
+}
