@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Shoko.Abstractions.User;
 using Shoko.Abstractions.User.Services;
+using Shoko.Abstractions.User.Enums;
+using Shoko.Abstractions.User.Update;
 using Shoko.Abstractions.Video;
 using Shoko.Abstractions.Video.Services;
 
@@ -76,9 +78,83 @@ public static class PlaybackEndpoints
             var paths = grant.FileIds.Select(id => Plugin.BasePath + "/stream/" + tokens.IssueStream(grant.UserId, id)).ToArray();
             // Keep token-only paths for older Windows handlers; updated handlers prefer the labelled paths.
             var namedPaths = paths.Select((path, index) => path + "/" + Uri.EscapeDataString(DisplayFileName(videos.GetVideoByID(grant.FileIds[index])!))).ToArray();
-            await c.Response.WriteAsJsonAsync(new { paths, namedPaths, expiresInHours = 12 });
+            var sessions = c.RequestServices.GetRequiredService<CompletionSessions>();
+            await sessions.ProgressGate.WaitAsync(c.RequestAborted);
+            try
+            {
+                var sessionToken = sessions.Issue(grant.UserId, grant.FileIds);
+                var completionPath = Plugin.BasePath + "/complete/" + sessionToken;
+                var progressPath = Plugin.BasePath + "/progress/" + sessionToken;
+                var data = c.RequestServices.GetRequiredService<IUserDataService>();
+                var resumeSeconds = grant.FileIds.Select(id => data.GetVideoUserData(videos.GetVideoByID(id)!, user!)?.ProgressPosition.TotalSeconds ?? 0).ToArray();
+                await c.Response.WriteAsJsonAsync(new { paths, namedPaths, completionPath, progressPath, resumeSeconds, watchedThreshold = 0.9, expiresInHours = 12 });
+            }
+            finally { sessions.ProgressGate.Release(); }
         }
         catch (InvalidOperationException e) { await Error(c, 429, e.Message); }
+    }
+    public sealed record ProgressRequest(long Sequence, double Seconds, double Duration);
+    public static Task Complete(HttpContext c) => SaveProgress(c, false);
+    public static Task Progress(HttpContext c) => SaveProgress(c, true);
+    private static async Task SaveProgress(HttpContext c, bool reportPosition)
+    {
+        PrivateResponse(c);
+        var token = c.Request.RouteValues["token"]?.ToString() ?? "";
+        var sessions = c.RequestServices.GetRequiredService<CompletionSessions>();
+        var session = sessions.Find(token);
+        if (session is null) { await Error(c, 410, "Watched-sync session expired. Reopen the episode from Shoko."); return; }
+        if (!int.TryParse(c.Request.RouteValues["part"]?.ToString(), out var part) || part < 0 || part >= session.Finished.Length)
+        { await Error(c, 400, "Invalid episode part."); return; }
+        ProgressRequest? request = null;
+        if (reportPosition)
+        {
+            if (c.Request.ContentLength > 1024) { await Error(c, 413, "Request too large."); return; }
+            try { request = await c.Request.ReadFromJsonAsync<ProgressRequest>(c.RequestAborted); }
+            catch (Exception e) when (e is System.Text.Json.JsonException or BadHttpRequestException)
+            { await Error(c, 400, "Invalid progress report."); return; }
+            if (request is null || request.Sequence <= 0 || !double.IsFinite(request.Seconds) || !double.IsFinite(request.Duration)
+                || request.Duration <= 0 || request.Duration > TimeSpan.FromDays(7).TotalSeconds || request.Seconds < 0 || request.Seconds > request.Duration + 2)
+            { await Error(c, 400, "Invalid playback position or duration."); return; }
+        }
+        await sessions.ProgressGate.WaitAsync(c.RequestAborted);
+        try
+        {
+            if (!sessions.IsCurrent(session)) { await Error(c, 409, "A newer playback session took over this episode."); return; }
+            var user = c.RequestServices.GetRequiredService<IUserService>().GetUserByID(session.Playback.UserId);
+            var service = c.RequestServices.GetRequiredService<IVideoService>();
+            var videos = session.Playback.FileIds.Select(service.GetVideoByID).ToArray();
+            if (videos.Any(video => !CanPlay(user, video)))
+            { await Error(c, 404, "This episode is no longer available to your account."); return; }
+            var data = c.RequestServices.GetRequiredService<IUserDataService>();
+            if (request is not null)
+            {
+                if (request.Sequence <= session.Sequences[part]) { await c.Response.WriteAsJsonAsync(new { saved = true }); return; }
+                if (!session.Finished[part])
+                {
+                    var finished = request.Seconds >= request.Duration * 0.9;
+                    await data.SaveVideoUserData(videos[part]!, user!, new VideoUserDataUpdate
+                    {
+                        ProgressPosition = TimeSpan.FromSeconds(finished ? 0 : request.Seconds),
+                        ApplyCompletionThreshold = false
+                    }, VideoUserDataSaveReason.PlaybackProgress, updateStatsNow: false);
+                    session.Finished[part] = finished;
+                }
+            }
+            else session.Finished[part] = true;
+            var complete = session.Finished.All(x => x);
+            if (complete)
+            {
+                foreach (var video in videos)
+                {
+                    if (session.Saved.Contains(video!.LocalID)) continue;
+                    await data.SetVideoWatchedStatus(video, user!, true, reason: VideoUserDataSaveReason.PlaybackEnd);
+                    session.Saved.Add(video.LocalID);
+                }
+            }
+            if (request is not null) session.Sequences[part] = request.Sequence;
+            await c.Response.WriteAsJsonAsync(new { watched = complete });
+        }
+        finally { sessions.ProgressGate.Release(); }
     }
     public static async Task Stream(HttpContext c)
     {
