@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Shoko.Abstractions.User;
 using Shoko.Abstractions.User.Services;
+using Shoko.Abstractions.User.Enums;
 using Shoko.Abstractions.Video;
 using Shoko.Abstractions.Video.Services;
 
@@ -76,9 +77,42 @@ public static class PlaybackEndpoints
             var paths = grant.FileIds.Select(id => Plugin.BasePath + "/stream/" + tokens.IssueStream(grant.UserId, id)).ToArray();
             // Keep token-only paths for older Windows handlers; updated handlers prefer the labelled paths.
             var namedPaths = paths.Select((path, index) => path + "/" + Uri.EscapeDataString(DisplayFileName(videos.GetVideoByID(grant.FileIds[index])!))).ToArray();
-            await c.Response.WriteAsJsonAsync(new { paths, namedPaths, expiresInHours = 12 });
+            var completionPath = Plugin.BasePath + "/complete/" + c.RequestServices.GetRequiredService<CompletionSessions>().Issue(grant.UserId, grant.FileIds);
+            await c.Response.WriteAsJsonAsync(new { paths, namedPaths, completionPath, watchedThreshold = 0.9, expiresInHours = 12 });
         }
         catch (InvalidOperationException e) { await Error(c, 429, e.Message); }
+    }
+    public static async Task Complete(HttpContext c)
+    {
+        PrivateResponse(c);
+        var token = c.Request.RouteValues["token"]?.ToString() ?? "";
+        var session = c.RequestServices.GetRequiredService<CompletionSessions>().Find(token);
+        if (session is null) { await Error(c, 410, "Watched-sync session expired. Reopen the episode from Shoko."); return; }
+        if (!int.TryParse(c.Request.RouteValues["part"]?.ToString(), out var part) || part < 0 || part >= session.Finished.Length)
+        { await Error(c, 400, "Invalid episode part."); return; }
+        await session.Gate.WaitAsync(c.RequestAborted);
+        try
+        {
+            var user = c.RequestServices.GetRequiredService<IUserService>().GetUserByID(session.Playback.UserId);
+            var service = c.RequestServices.GetRequiredService<IVideoService>();
+            var videos = session.Playback.FileIds.Select(service.GetVideoByID).ToArray();
+            if (videos.Any(video => !CanPlay(user, video)))
+            { await Error(c, 404, "This episode is no longer available to your account."); return; }
+            session.Finished[part] = true;
+            var complete = session.Finished.All(x => x);
+            if (complete)
+            {
+                var data = c.RequestServices.GetRequiredService<IUserDataService>();
+                foreach (var video in videos)
+                {
+                    if (session.Saved.Contains(video!.LocalID)) continue;
+                    await data.SetVideoWatchedStatus(video, user!, true, reason: VideoUserDataSaveReason.PlaybackEnd);
+                    session.Saved.Add(video.LocalID);
+                }
+            }
+            await c.Response.WriteAsJsonAsync(new { watched = complete });
+        }
+        finally { session.Gate.Release(); }
     }
     public static async Task Stream(HttpContext c)
     {

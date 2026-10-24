@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
   <ItemGroup><ProjectReference Include="../ShokoMpc/ShokoMpc.csproj" /><PackageReference Include="Shoko.Abstractions" Version="6.0.0-alpha.112" /><PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.0" /></ItemGroup>
-  <ItemGroup><Compile Remove="WindowsProtocolTests.cs" /></ItemGroup>
+  <ItemGroup><Compile Remove="WindowsProtocolTests.cs;IpcIntegrationTests.cs;IpcPlayerFixture.cs" /></ItemGroup>
 </Project>

@@ -13,7 +13,7 @@ using System.Windows.Forms;
 namespace ShokoMpcWindows
 {
     public sealed class Settings { public string ServerUrl { get; set; } public string PlayerPath { get; set; } }
-    public sealed class Resolved { public string[] paths { get; set; } public string[] namedPaths { get; set; } }
+    public sealed class Resolved { public string[] paths { get; set; } public string[] namedPaths { get; set; } public string completionPath { get; set; } }
     public static class Protocol
     {
         public static Uri NormalizeServer(string value)
@@ -63,6 +63,12 @@ namespace ShokoMpcWindows
             if (value.Any(c => Char.IsControl(c) || c == '"' || c == '\\')) throw new ArgumentException("Invalid player argument.");
             return "\"" + value + "\"";
         }
+        public static string CompletionUrl(string server, string path)
+        {
+            if (!Regex.IsMatch(path ?? "", "\\A/api/plugin/ShokoMpc/complete/[a-f0-9]{64}\\z"))
+                throw new ArgumentException("The server returned an invalid watched-sync path.");
+            return NormalizeServer(server).AbsoluteUri.TrimEnd('/') + path;
+        }
     }
     public static class Program
     {
@@ -95,8 +101,17 @@ namespace ShokoMpcWindows
                     var paths = resolved.namedPaths ?? resolved.paths;
                     if (paths == null || paths.Length < 1 || paths.Length > 16)
                         throw new InvalidOperationException("The server returned no playable video.");
-                    var arguments = String.Join(" ", paths.Select(p => Protocol.Quote(Protocol.MediaUrl(server, p)))) + " /play";
-                    Process.Start(new ProcessStartInfo(player, arguments) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(player) });
+                    var urls = paths.Select(p => Protocol.MediaUrl(server, p)).ToArray();
+                    if (!String.IsNullOrEmpty(resolved.completionPath))
+                    {
+                        using (var monitor = new PlaybackMonitor(player, urls, Protocol.CompletionUrl(server, resolved.completionPath), client))
+                            Application.Run(monitor);
+                    }
+                    else
+                    {
+                        var arguments = String.Join(" ", urls.Select(Protocol.Quote)) + " /play";
+                        Process.Start(new ProcessStartInfo(player, arguments) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(player) });
+                    }
                 }
                 return 0;
             }

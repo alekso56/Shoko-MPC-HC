@@ -34,15 +34,22 @@ Check(tokens.FindStream(streamToken) is null, "stream session expires");
 Check(tokens.Redeem("../invalid") is null && tokens.FindStream("invalid") is null, "malformed tokens rejected");
 
 bool permitted = true;
+var savedWatches = new List<(int File, int User)>();
 var series = Stub.Make<IShokoSeries>((_, _) => null);
 var user = Stub.Make<IUser>((m, _) => m.Name switch { "get_LocalID" => 7, "IsAllowedToSee" => permitted, _ => null });
 var video = Stub.Make<IVideo>((m, _) => m.Name switch {
     "get_LocalID" => 9, "get_EarliestKnownName" => "[Group] Show - 01 日本語.mkv", "get_Series" => (IReadOnlyList<IShokoSeries>)new[] { series },
     "GetStream" => new MemoryStream(Encoding.UTF8.GetBytes("0123456789")), _ => null });
 var users = Stub.Make<IUserService>((m, _) => m.Name is "GetUserFromHttpContext" or "GetUserByID" ? user : null);
-var videos = Stub.Make<IVideoService>((m, a) => m.Name == "GetVideoByID" && (int)a![0]! == 9 ? video : null);
+var secondVideo = Stub.Make<IVideo>((m, _) => m.Name switch { "get_LocalID" => 10, "get_Series" => (IReadOnlyList<IShokoSeries>)new[] { series }, _ => null });
+var videos = Stub.Make<IVideoService>((m, a) => m.Name == "GetVideoByID" ? (int)a![0]! switch { 9 => video, 10 => secondVideo, _ => null } : null);
+var userData = Stub.Make<IUserDataService>((m, a) => {
+    if (m.Name != "SetVideoWatchedStatus") return null;
+    savedWatches.Add((((IVideo)a![0]!).LocalID, ((IUser)a[1]!).LocalID));
+    return Task.FromResult<IVideoUserData>(null!);
+});
 using var host = await new HostBuilder().ConfigureWebHost(web => web.UseTestServer().ConfigureServices(services => {
-    services.AddRouting(); services.AddLogging(); services.AddSingleton(users); services.AddSingleton(videos);
+    services.AddRouting(); services.AddLogging(); services.AddSingleton(users); services.AddSingleton(videos); services.AddSingleton(userData);
     services.AddAuthentication("test").AddScheme<AuthenticationSchemeOptions, TestAuthentication>("test", _ => { });
     services.AddAuthorization(); Plugin.RegisterServices(services, null!);
 }).Configure(app => {
@@ -69,6 +76,25 @@ response = await client.PostAsync(prefix + "/resolve/" + ticket, new StringConte
 var json = await response.Content.ReadFromJsonAsync<JsonElement>();
 var streamPath = json.GetProperty("paths")[0].GetString();
 var namedPath = json.GetProperty("namedPaths")[0].GetString();
+var completionPath = json.GetProperty("completionPath").GetString();
+Check(savedWatches.Count == 0, "opening an episode does not mark it watched");
+Check((await client.GetAsync(completionPath + "/0")).StatusCode != HttpStatusCode.OK, "completion requires POST");
+Check((await client.PostAsync(prefix + "/complete/" + streamPath!.Split('/').Last() + "/0", null)).StatusCode == HttpStatusCode.Gone, "stream token cannot change watched status");
+Check((await client.PostAsync(completionPath + "/99", null)).StatusCode == HttpStatusCode.BadRequest, "out of range episode part rejected");
+permitted = false;
+Check((await client.PostAsync(completionPath + "/0", null)).StatusCode == HttpStatusCode.NotFound && savedWatches.Count == 0, "revoked access cannot mark watched");
+permitted = true;
+var completionReplies = await Task.WhenAll(Enumerable.Range(0, 3).Select(_ => client.PostAsync(completionPath + "/0", null)));
+Check(completionReplies.All(r => r.IsSuccessStatusCode) && savedWatches.SequenceEqual(new[] { (9, 7) }), "completion is idempotent and uses launching user's account");
+var sessionStore = host.Services.GetRequiredService<CompletionSessions>();
+var multi = prefix + "/complete/" + sessionStore.Issue(7, [9, 10]);
+await client.PostAsync(multi + "/0", null);
+Check(savedWatches.Count == 1, "multipart episode waits for all parts");
+await client.PostAsync(multi + "/1", null);
+Check(savedWatches.Skip(1).SequenceEqual(new[] { (9, 7), (10, 7) }), "multipart completion propagates watched status through Shoko service");
+var expiring = new CompletionSessions(clock);
+var expired = expiring.Issue(7, [9]); clock.Now = clock.Now.AddHours(13);
+Check(expiring.Find(expired) is null, "watched write capability expires");
 Check(namedPath == streamPath + "/" + Uri.EscapeDataString("[Group] Show - 01 日本語.mkv"), "stream URL preserves readable filename with Unicode");
 Check(response.IsSuccessStatusCode && !json.ToString().Contains("apikey"), "resolve without sending permanent credentials to Windows");
 Check((await client.PostAsync(prefix + "/resolve/" + ticket, new StringContent(""))).StatusCode == HttpStatusCode.Gone, "redeeming twice rejected over HTTP");

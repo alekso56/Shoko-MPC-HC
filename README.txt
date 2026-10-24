@@ -38,6 +38,18 @@ video filename, so its title bar can display the filename instead of a token.
 Existing installations should update the server plugin and run Windows Setup
 once more. Older Windows handlers remain compatible but keep token-only URLs.
 
+WATCHED STATUS
+Version 0.2.0 marks the episode watched in the launching Shoko user's account
+when MPC-HC's playback position reaches 90% of the duration. Seeking to or
+past 90% also counts. All files of a multipart episode must reach 90%.
+Opening a file or stopping before the threshold does not mark it watched.
+The handler listens to MPC-HC's native /slave API while playback is active;
+it needs no MPC-HC web server. It exits after syncing, closing the player,
+or losing the connection. A new launch takes over monitoring a reused player.
+Watched updates retry temporary network failures. If saving fails, a Windows
+message asks you to mark the episode manually. Refresh Shoko to see the change.
+Update both the server plugin and Windows Setup to enable this feature.
+
 SECURITY AND LIMITATIONS
 The server uses your existing Shoko browser session for launch authorization.
 The handler receives only an opaque, single-use ticket valid for 90 seconds.
@@ -49,8 +61,11 @@ The handler pins the server address and rejects arbitrary URLs, executables,
 redirects, extra protocol parameters, and shell arguments. It never invokes
 a shell. Keep the setup folder and installed settings writable only by you.
 This release streams original video files, with byte-range seeking. It does
-not transcode, update watched status, restore resume position, or transfer
+not transcode, restore resume position, or transfer
 separate subtitle files. Embedded subtitles remain in the original video.
+Watched-status writes use a separate expiring capability limited to this
+launch's files and account. Stream URLs cannot change watched status. The
+server checks permissions again and suppresses duplicate completion reports.
 The web adapter uses the visible episode's AniDB link; it does not inspect
 React internals or alter Shoko's installed Web UI files. Future UI changes
 may require an adapter update. The current middleware targets /webui routes.
