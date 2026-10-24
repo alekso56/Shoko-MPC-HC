@@ -13,7 +13,14 @@ using System.Windows.Forms;
 namespace ShokoMpcWindows
 {
     public sealed class Settings { public string ServerUrl { get; set; } public string PlayerPath { get; set; } }
-    public sealed class Resolved { public string[] paths { get; set; } }
+    public sealed class Resolved
+    {
+        public string[] paths { get; set; }
+        public string[] namedPaths { get; set; }
+        public string completionPath { get; set; }
+        public string progressPath { get; set; }
+        public double[] resumeSeconds { get; set; }
+    }
     public static class Protocol
     {
         public static Uri NormalizeServer(string value)
@@ -49,8 +56,12 @@ namespace ShokoMpcWindows
         }
         public static string MediaUrl(string server, string path)
         {
-            if (!Regex.IsMatch(path ?? "", "\\A/api/plugin/ShokoMpc/stream/[a-f0-9]{64}\\z"))
+            var match = Regex.Match(path ?? "", "\\A/api/plugin/ShokoMpc/stream/[a-f0-9]{64}(?:/([A-Za-z0-9._~-]|%[0-9A-Fa-f]{2})+)?\\z");
+            if (!match.Success || path.Length > 8192)
                 throw new ArgumentException("The server returned an invalid video path.");
+            var name = Uri.UnescapeDataString(path.Substring(path.LastIndexOf('/') + 1));
+            if (name == "." || name == ".." || name.Any(c => Char.IsControl(c) || "<>:\"/\\|?*%".IndexOf(c) >= 0))
+                throw new ArgumentException("The server returned an invalid video filename.");
             return NormalizeServer(server).AbsoluteUri.TrimEnd('/') + path;
         }
         public static string Quote(string value)
@@ -58,6 +69,24 @@ namespace ShokoMpcWindows
             // These arguments are validated HTTP URLs, never shell expressions or file paths.
             if (value.Any(c => Char.IsControl(c) || c == '"' || c == '\\')) throw new ArgumentException("Invalid player argument.");
             return "\"" + value + "\"";
+        }
+        public static string CompletionUrl(string server, string path)
+        {
+            if (!Regex.IsMatch(path ?? "", "\\A/api/plugin/ShokoMpc/complete/[a-f0-9]{64}\\z"))
+                throw new ArgumentException("The server returned an invalid watched-sync path.");
+            return NormalizeServer(server).AbsoluteUri.TrimEnd('/') + path;
+        }
+        public static string ProgressUrl(string server, string path)
+        {
+            if (!Regex.IsMatch(path ?? "", "\\A/api/plugin/ShokoMpc/progress/[a-f0-9]{64}\\z"))
+                throw new ArgumentException("The server returned an invalid playback-sync path.");
+            return NormalizeServer(server).AbsoluteUri.TrimEnd('/') + path;
+        }
+        public static double[] ResumePositions(double[] positions, int count)
+        {
+            if (positions == null || positions.Length != count || positions.Any(x => Double.IsNaN(x) || Double.IsInfinity(x) || x < 0 || x > TimeSpan.FromDays(7).TotalSeconds))
+                throw new ArgumentException("The server returned invalid resume positions.");
+            return positions;
         }
     }
     public static class Program
@@ -88,10 +117,22 @@ namespace ShokoMpcWindows
                             ? "The play link expired or was already used. Click Play again in Shoko."
                             : "Shoko could not open the video (HTTP " + (int)response.StatusCode + "). Check that the plugin is installed and the server is reachable.");
                     var resolved = serializer.Deserialize<Resolved>(response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
-                    if (resolved.paths == null || resolved.paths.Length < 1 || resolved.paths.Length > 16)
+                    var paths = resolved.namedPaths ?? resolved.paths;
+                    if (paths == null || paths.Length < 1 || paths.Length > 16)
                         throw new InvalidOperationException("The server returned no playable video.");
-                    var arguments = String.Join(" ", resolved.paths.Select(p => Protocol.Quote(Protocol.MediaUrl(server, p)))) + " /play";
-                    Process.Start(new ProcessStartInfo(player, arguments) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(player) });
+                    var urls = paths.Select(p => Protocol.MediaUrl(server, p)).ToArray();
+                    if (!String.IsNullOrEmpty(resolved.completionPath))
+                    {
+                        var progress = String.IsNullOrEmpty(resolved.progressPath) ? null : Protocol.ProgressUrl(server, resolved.progressPath);
+                        var resume = progress == null ? null : Protocol.ResumePositions(resolved.resumeSeconds, urls.Length);
+                        using (var monitor = new PlaybackMonitor(player, urls, Protocol.CompletionUrl(server, resolved.completionPath), client, progress, resume))
+                            Application.Run(monitor);
+                    }
+                    else
+                    {
+                        var arguments = String.Join(" ", urls.Select(Protocol.Quote)) + " /play";
+                        Process.Start(new ProcessStartInfo(player, arguments) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(player) });
+                    }
                 }
                 return 0;
             }

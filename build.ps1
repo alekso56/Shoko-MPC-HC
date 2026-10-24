@@ -5,7 +5,8 @@ if (-not (Test-Path -LiteralPath $compiler)) { throw 'Build on Windows with .NET
 $windowsDir = Join-Path $PSScriptRoot 'Windows'
 $handler = Join-Path $windowsDir 'ShokoMpcHandler.exe'
 $source = Join-Path $windowsDir 'Handler.cs'
-& $compiler /nologo /target:winexe "/out:$handler" /r:System.Net.Http.dll /r:System.Web.dll /r:System.Web.Extensions.dll /r:System.Windows.Forms.dll $source
+$monitorSource = Join-Path $windowsDir 'PlaybackMonitor.cs'
+& $compiler /nologo /target:winexe "/out:$handler" /r:System.Net.Http.dll /r:System.Web.dll /r:System.Web.Extensions.dll /r:System.Windows.Forms.dll $source $monitorSource
 if ($LASTEXITCODE) { throw 'Windows handler compilation failed.' }
 $embeddedDir = Join-Path $PSScriptRoot 'ShokoMpc\Windows'
 New-Item -ItemType Directory -Path $embeddedDir,$OutputDirectory -Force | Out-Null
@@ -20,12 +21,20 @@ if (-not $SkipTests) {
     $testDir = Join-Path $PSScriptRoot 'artifacts'
     New-Item -ItemType Directory -Path $testDir -Force | Out-Null
     $testExe = Join-Path $testDir 'WindowsProtocolTests.exe'
-    & $compiler /nologo /target:exe /main:WindowsProtocolTests "/out:$testExe" /r:System.Net.Http.dll /r:System.Web.dll /r:System.Web.Extensions.dll /r:System.Windows.Forms.dll $source $testSource
+    & $compiler /nologo /target:exe /main:WindowsProtocolTests "/out:$testExe" /r:System.Net.Http.dll /r:System.Web.dll /r:System.Web.Extensions.dll /r:System.Windows.Forms.dll $source $monitorSource $testSource
     if ($LASTEXITCODE) { throw 'Windows tests failed to compile.' }
     & $testExe
     if ($LASTEXITCODE) { throw 'Windows tests failed.' }
+    $fixtureExe = Join-Path $testDir 'IpcPlayerFixture.exe'
+    & $compiler /nologo /target:winexe "/out:$fixtureExe" /r:System.Windows.Forms.dll (Join-Path $PSScriptRoot 'Tests\IpcPlayerFixture.cs')
+    if ($LASTEXITCODE) { throw 'IPC fixture compilation failed.' }
+    $ipcTests = Join-Path $testDir 'IpcIntegrationTests.exe'
+    & $compiler /nologo /target:exe /main:IpcIntegrationTests "/out:$ipcTests" /r:System.Net.Http.dll /r:System.Web.dll /r:System.Web.Extensions.dll /r:System.Windows.Forms.dll $source $monitorSource (Join-Path $PSScriptRoot 'Tests\IpcIntegrationTests.cs')
+    if ($LASTEXITCODE) { throw 'IPC test compilation failed.' }
+    & $ipcTests $fixtureExe
+    if ($LASTEXITCODE) { throw 'Native IPC integration test failed.' }
 }
-$archiveName = 'ShokoMpc-v0.1.1-any.zip'
+$archiveName = 'ShokoMpc-v0.3.0-any.zip'
 $dll = Join-Path $PSScriptRoot 'ShokoMpc\bin\Release\net10.0\ShokoMpc.dll'
 Compress-Archive -LiteralPath $dll -DestinationPath (Join-Path $OutputDirectory $archiveName) -Force
 Copy-Item -LiteralPath (Join-Path $embeddedDir 'Windows-Setup.zip') -Destination (Join-Path $OutputDirectory 'ShokoMpc-Windows-Setup.zip') -Force
@@ -35,9 +44,9 @@ $manifest = [ordered]@{
     overview='Play episodes in MPC-HC directly from the Shoko Web UI. Includes one-time Windows link-handler setup.';
     authors='alekso56'; repository_url='https://github.com/alekso56/Shoko-MPC-HC'; homepage_url=$null;
     tags=@('media-player','mpc-hc','webui'); thumbnail=$null; icon=$null;
-    releases=@([ordered]@{version='0.1.1'; tag='v0.1.1'; source_revision=$null; released_at='2026-10-24T00:00:00Z'; channel='Stable';
-        release_notes='Fix session-only WebUI sign-ins. Targets Shoko 6 dev.550 / Abstractions alpha.112. Requires one-time Windows setup. No watch-state sync or external subtitle handoff.';
-        archives=@([ordered]@{runtime='any'; abstraction='6.0.0'; url="https://github.com/alekso56/Shoko-MPC-HC/releases/download/v0.1.1/$archiveName"; checksum=$checksum})})
+    releases=@([ordered]@{version='0.3.0'; tag='v0.3.0'; source_revision=$null; released_at='2026-10-24T00:00:00Z'; channel='Stable';
+        release_notes='Save playback position in Shoko and resume on reopening. Finished episodes clear their bookmark at 90%. Update Windows Setup. Targets Shoko 6 dev.550 / Abstractions alpha.112.';
+        archives=@([ordered]@{runtime='any'; abstraction='6.0.0'; url="https://github.com/alekso56/Shoko-MPC-HC/releases/download/v0.3.0/$archiveName"; checksum=$checksum})})
 }
 $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $PSScriptRoot 'manifest.json') -Encoding UTF8
 Write-Host "Built $archiveName (SHA256 $checksum)"
