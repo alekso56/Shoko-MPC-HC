@@ -14,18 +14,18 @@
   "icon": null,
   "releases": [
     {
-      "version": "0.1.2",
-      "tag": "v0.1.2",
-      "source_revision": "e2f5e25378a89972816cb972d997c2d7225620e9",
+      "version": "0.2.0",
+      "tag": "v0.2.0",
+      "source_revision": "8669ba81f837874905a6646ae7c769be06e1eecf",
       "released_at": "2026-10-24T00:00:00Z",
       "channel": "Stable",
-      "release_notes": "Show readable filenames in MPC-HC. Update Windows Setup for named streams. Targets Shoko 6 dev.550 / Abstractions alpha.112. Requires one-time Windows setup. No watch-state sync or external subtitle handoff.",
+      "release_notes": "Mark episodes watched when MPC-HC reaches 90%. Update Windows Setup for watched syncing. Targets Shoko 6 dev.550 / Abstractions alpha.112. No resume sync or external subtitle handoff.",
       "archives": [
         {
           "runtime": "any",
           "abstraction": "6.0.0",
-          "url": "https://github.com/alekso56/Shoko-MPC-HC/releases/download/v0.1.2/ShokoMpc-v0.1.2-any.zip",
-          "checksum": "efce777f4df46b8edcc5f3e1331320eaee002b8c10f24d6759c9695228eb2e6a"
+          "url": "https://github.com/alekso56/Shoko-MPC-HC/releases/download/v0.2.0/ShokoMpc-v0.2.0-any.zip",
+          "checksum": "3776e939ced0061aae0374a2775928b5da7e76744c29d6a882d7121012c5f3d7"
         }
       ]
     }
