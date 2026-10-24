@@ -17,6 +17,7 @@ using Microsoft.Extensions.Options;
 using Shoko.Abstractions.Metadata.Shoko;
 using Shoko.Abstractions.User;
 using Shoko.Abstractions.User.Services;
+using Shoko.Abstractions.User.Update;
 using Shoko.Abstractions.Video;
 using Shoko.Abstractions.Video.Services;
 using ShokoMpc;
@@ -35,6 +36,8 @@ Check(tokens.Redeem("../invalid") is null && tokens.FindStream("invalid") is nul
 
 bool permitted = true;
 var savedWatches = new List<(int File, int User)>();
+var bookmarks = new Dictionary<(int File, int User), double>();
+var positionWrites = 0;
 var series = Stub.Make<IShokoSeries>((_, _) => null);
 var user = Stub.Make<IUser>((m, _) => m.Name switch { "get_LocalID" => 7, "IsAllowedToSee" => permitted, _ => null });
 var video = Stub.Make<IVideo>((m, _) => m.Name switch {
@@ -44,6 +47,19 @@ var users = Stub.Make<IUserService>((m, _) => m.Name is "GetUserFromHttpContext"
 var secondVideo = Stub.Make<IVideo>((m, _) => m.Name switch { "get_LocalID" => 10, "get_Series" => (IReadOnlyList<IShokoSeries>)new[] { series }, _ => null });
 var videos = Stub.Make<IVideoService>((m, a) => m.Name == "GetVideoByID" ? (int)a![0]! switch { 9 => video, 10 => secondVideo, _ => null } : null);
 var userData = Stub.Make<IUserDataService>((m, a) => {
+    if (m.Name == "GetVideoUserData")
+    {
+        var key = (((IVideo)a![0]!).LocalID, ((IUser)a[1]!).LocalID);
+        return Stub.Make<IVideoUserData>((property, _) => property.Name == "get_ProgressPosition" ? TimeSpan.FromSeconds(bookmarks.GetValueOrDefault(key)) : null);
+    }
+    if (m.Name == "SaveVideoUserData")
+    {
+        var update = (VideoUserDataUpdate)a![2]!;
+        if (update.ApplyCompletionThreshold != false) throw new Exception("Progress must preserve the plugin's ninety-percent rule.");
+        bookmarks[(((IVideo)a[0]!).LocalID, ((IUser)a[1]!).LocalID)] = update.ProgressPosition!.Value.TotalSeconds;
+        positionWrites++;
+        return Task.FromResult<IVideoUserData>(null!);
+    }
     if (m.Name != "SetVideoWatchedStatus") return null;
     savedWatches.Add((((IVideo)a![0]!).LocalID, ((IUser)a[1]!).LocalID));
     return Task.FromResult<IVideoUserData>(null!);
@@ -95,6 +111,39 @@ Check(savedWatches.Skip(1).SequenceEqual(new[] { (9, 7), (10, 7) }), "multipart 
 var expiring = new CompletionSessions(clock);
 var expired = expiring.Issue(7, [9]); clock.Now = clock.Now.AddHours(13);
 Check(expiring.Find(expired) is null, "watched write capability expires");
+var progressToken = sessionStore.Issue(7, [9]);
+var progressPath = prefix + "/progress/" + progressToken + "/0";
+async Task<HttpResponseMessage> Report(string path, long sequence, double seconds, double duration = 100)
+    => await client.PostAsJsonAsync(path, new { sequence, seconds, duration });
+Check((await Report(progressPath, 1, 35)).IsSuccessStatusCode && bookmarks[(9, 7)] == 35 && savedWatches.Count == 3, "partial progress saved for launching account without watched change");
+Check((await Report(progressPath, 2, 15)).IsSuccessStatusCode && bookmarks[(9, 7)] == 15, "seeking backwards updates resume bookmark");
+var writesBefore = positionWrites;
+await Report(progressPath, 1, 35); await Report(progressPath, 2, 15);
+Check(bookmarks[(9, 7)] == 15 && positionWrites == writesBefore, "duplicate and out-of-order progress cannot overwrite newer bookmark");
+Check((await Report(progressPath, 3, -1)).StatusCode == HttpStatusCode.BadRequest &&
+    (await Report(progressPath, 3, 1010)).StatusCode == HttpStatusCode.BadRequest &&
+    (await Report(progressPath, 3, 1, 0)).StatusCode == HttpStatusCode.BadRequest, "invalid progress rejected");
+Check((await Report(prefix + "/progress/" + streamPath!.Split('/').Last() + "/0", 1, 10)).StatusCode == HttpStatusCode.Gone, "media token cannot write resume data");
+Check((await Report(prefix + "/progress/" + progressToken + "/20", 1, 10)).StatusCode == HttpStatusCode.BadRequest, "progress part bounds checked");
+permitted = false;
+Check((await Report(progressPath, 3, 40)).StatusCode == HttpStatusCode.NotFound && bookmarks[(9, 7)] == 15, "revoked access cannot update bookmark");
+permitted = true;
+var newTicket = host.Services.GetRequiredService<PlaybackTokens>().IssueLaunch(7, [9]);
+var reopened = await client.PostAsync(prefix + "/resolve/" + newTicket, null);
+var resumeJson = await reopened.Content.ReadFromJsonAsync<JsonElement>();
+Check(resumeJson.GetProperty("resumeSeconds")[0].GetDouble() == 15, "reopening returns saved resume seconds");
+var reopenedProgress = resumeJson.GetProperty("progressPath").GetString() + "/0";
+Check((await Report(progressPath, 4, 50)).StatusCode == HttpStatusCode.Conflict && bookmarks[(9, 7)] == 15, "older launch cannot overwrite newer session's bookmark");
+await Report(reopenedProgress, 1, 90);
+Check(bookmarks[(9, 7)] == 0 && savedWatches.Count == 4, "ninety percent clears bookmark and marks watched");
+await Report(reopenedProgress, 2, 10);
+Check(bookmarks[(9, 7)] == 0 && savedWatches.Count == 4, "late progress cannot recreate a completed bookmark");
+var multipartProgress = prefix + "/progress/" + sessionStore.Issue(7, [9, 10]);
+await Report(multipartProgress + "/0", 1, 90);
+await Report(multipartProgress + "/1", 1, 20);
+Check(bookmarks[(9, 7)] == 0 && bookmarks[(10, 7)] == 20 && savedWatches.Count == 4, "multipart files retain independent bookmarks without premature completion");
+await Report(multipartProgress + "/1", 2, 90);
+Check(bookmarks[(10, 7)] == 0 && savedWatches.Count == 6, "multipart completion clears every bookmark");
 Check(namedPath == streamPath + "/" + Uri.EscapeDataString("[Group] Show - 01 日本語.mkv"), "stream URL preserves readable filename with Unicode");
 Check(response.IsSuccessStatusCode && !json.ToString().Contains("apikey"), "resolve without sending permanent credentials to Windows");
 Check((await client.PostAsync(prefix + "/resolve/" + ticket, new StringContent(""))).StatusCode == HttpStatusCode.Gone, "redeeming twice rejected over HTTP");

@@ -10,6 +10,8 @@ class IpcPlayerFixture : NativeWindow
     readonly IntPtr owner;
     readonly string url;
     int requests;
+    double seek;
+    int seeks;
     IpcPlayerFixture(IntPtr owner, string url)
     {
         this.owner = owner; this.url = url;
@@ -27,8 +29,22 @@ class IpcPlayerFixture : NativeWindow
         {
             var data = (CopyData)Marshal.PtrToStructure(message.LParam, typeof(CopyData));
             var command = data.Command.ToInt64();
+            var resume = url.EndsWith("Resume.mkv") || url.EndsWith("Finish.mkv");
+            if (command == 0xA0002000)
+            {
+                seek = Double.Parse(Marshal.PtrToStringUni(data.Data), System.Globalization.CultureInfo.InvariantCulture); seeks++;
+                if (seek != 35.5 || seeks > 1) throw new Exception("Expected exactly one resume seek to 35.5 seconds");
+            }
             if (command == 0xA0003002) Send(0x50000003, "Fixture|Author|Description|" + url + "|100");
-            if (command == 0xA0003004) { requests++; Send(0x50000007, requests == 1 ? "89" : "90"); }
+            if (command == 0xA0003004)
+            {
+                requests++;
+                if (!resume) Send(0x50000007, requests == 1 ? "89" : "90");
+                else if (seek == 0) Send(0x50000007, "0");
+                else if (requests == 1) Send(0x50000007, "35.5");
+                else if (requests == 2) Send(0x50000007, url.EndsWith("Finish.mkv") ? "90" : "40");
+                else { Send(0x50000002, "2"); Send(0x50000007, "0"); }
+            }
             message.Result = new IntPtr(1); return;
         }
         base.WndProc(ref message);
@@ -41,7 +57,7 @@ class IpcPlayerFixture : NativeWindow
         var started = DateTime.UtcNow; bool connected = false;
         timer.Tick += delegate {
             if (!connected) { connected = true; fixture.Send(0x50000000, fixture.Handle.ToInt64().ToString()); }
-            if (fixture.requests >= 2 || DateTime.UtcNow - started > TimeSpan.FromSeconds(10)) { timer.Stop(); fixture.DestroyHandle(); Application.ExitThread(); }
+            if (fixture.requests >= (fixture.url.EndsWith("Episode.mkv") ? 2 : 3) || DateTime.UtcNow - started > TimeSpan.FromSeconds(10)) { timer.Stop(); fixture.DestroyHandle(); Application.ExitThread(); }
         };
         timer.Start(); Application.Run(); timer.Dispose();
     }
