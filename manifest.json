@@ -16,7 +16,7 @@
     {
       "version": "0.2.0",
       "tag": "v0.2.0",
-      "source_revision": null,
+      "source_revision": "8669ba81f837874905a6646ae7c769be06e1eecf",
       "released_at": "2026-10-24T00:00:00Z",
       "channel": "Stable",
       "release_notes": "Mark episodes watched when MPC-HC reaches 90%. Update Windows Setup for watched syncing. Targets Shoko 6 dev.550 / Abstractions alpha.112. No resume sync or external subtitle handoff.",
