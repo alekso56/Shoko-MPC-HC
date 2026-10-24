@@ -1,0 +1,33 @@
+{
+  "id": "e84bc763-559a-4a54-9332-69741ec61c25",
+  "name": "Shoko MPC-HC",
+  "overview": "Play episodes in MPC-HC directly from the Shoko Web UI. Includes one-time Windows link-handler setup.",
+  "authors": "alekso56",
+  "repository_url": "https://github.com/alekso56/Shoko-MPC-HC",
+  "homepage_url": null,
+  "tags": [
+    "media-player",
+    "mpc-hc",
+    "webui"
+  ],
+  "thumbnail": null,
+  "icon": null,
+  "releases": [
+    {
+      "version": "0.3.0",
+      "tag": "v0.3.0",
+      "source_revision": "f04dc917bfef124842d83539dbe5fe5e284289e2",
+      "released_at": "2026-10-24T00:00:00Z",
+      "channel": "Stable",
+      "release_notes": "Save playback position in Shoko and resume on reopening. Finished episodes clear their bookmark at 90%. Update Windows Setup. Targets Shoko 6 dev.550 / Abstractions alpha.112.",
+      "archives": [
+        {
+          "runtime": "any",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/alekso56/Shoko-MPC-HC/releases/download/v0.3.0/ShokoMpc-v0.3.0-any.zip",
+          "checksum": "5190aaaa668c50420bb1ced899b417d4209b19ec690a7050a5b321561c006f67"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+root = true
+[*.cs]
+indent_style = space
+indent_size = 4
+csharp_prefer_braces = true:warning
+dotnet_diagnostic.IDE0011.severity = warning
