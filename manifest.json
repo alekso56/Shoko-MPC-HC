@@ -16,7 +16,7 @@
     {
       "version": "0.3.0",
       "tag": "v0.3.0",
-      "source_revision": null,
+      "source_revision": "f04dc917bfef124842d83539dbe5fe5e284289e2",
       "released_at": "2026-10-24T00:00:00Z",
       "channel": "Stable",
       "release_notes": "Save playback position in Shoko and resume on reopening. Finished episodes clear their bookmark at 90%. Update Windows Setup. Targets Shoko 6 dev.550 / Abstractions alpha.112.",
