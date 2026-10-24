@@ -34,7 +34,7 @@ if (-not $SkipTests) {
     & $ipcTests $fixtureExe
     if ($LASTEXITCODE) { throw 'Native IPC integration test failed.' }
 }
-$archiveName = 'ShokoMpc-v0.2.0-any.zip'
+$archiveName = 'ShokoMpc-v0.3.0-any.zip'
 $dll = Join-Path $PSScriptRoot 'ShokoMpc\bin\Release\net10.0\ShokoMpc.dll'
 Compress-Archive -LiteralPath $dll -DestinationPath (Join-Path $OutputDirectory $archiveName) -Force
 Copy-Item -LiteralPath (Join-Path $embeddedDir 'Windows-Setup.zip') -Destination (Join-Path $OutputDirectory 'ShokoMpc-Windows-Setup.zip') -Force
@@ -44,9 +44,9 @@ $manifest = [ordered]@{
     overview='Play episodes in MPC-HC directly from the Shoko Web UI. Includes one-time Windows link-handler setup.';
     authors='alekso56'; repository_url='https://github.com/alekso56/Shoko-MPC-HC'; homepage_url=$null;
     tags=@('media-player','mpc-hc','webui'); thumbnail=$null; icon=$null;
-    releases=@([ordered]@{version='0.2.0'; tag='v0.2.0'; source_revision=$null; released_at='2026-10-24T00:00:00Z'; channel='Stable';
-        release_notes='Mark episodes watched when MPC-HC reaches 90%. Update Windows Setup for watched syncing. Targets Shoko 6 dev.550 / Abstractions alpha.112. No resume sync or external subtitle handoff.';
-        archives=@([ordered]@{runtime='any'; abstraction='6.0.0'; url="https://github.com/alekso56/Shoko-MPC-HC/releases/download/v0.2.0/$archiveName"; checksum=$checksum})})
+    releases=@([ordered]@{version='0.3.0'; tag='v0.3.0'; source_revision=$null; released_at='2026-10-24T00:00:00Z'; channel='Stable';
+        release_notes='Save playback position in Shoko and resume on reopening. Finished episodes clear their bookmark at 90%. Update Windows Setup. Targets Shoko 6 dev.550 / Abstractions alpha.112.';
+        archives=@([ordered]@{runtime='any'; abstraction='6.0.0'; url="https://github.com/alekso56/Shoko-MPC-HC/releases/download/v0.3.0/$archiveName"; checksum=$checksum})})
 }
 $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $PSScriptRoot 'manifest.json') -Encoding UTF8
 Write-Host "Built $archiveName (SHA256 $checksum)"

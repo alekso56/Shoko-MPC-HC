@@ -28,12 +28,22 @@ public class WindowsProtocolTests
         Check(Protocol.Quote("http://localhost/a") == "\"http://localhost/a\"", "player URL quoted");
         var completion = "/api/plugin/ShokoMpc/complete/" + ticket;
         Check(Protocol.CompletionUrl(server, completion) == server + completion, "watched endpoint pinned to server");
+        var progressPath = "/api/plugin/ShokoMpc/progress/" + ticket;
+        Check(Protocol.ProgressUrl(server, progressPath) == server + progressPath, "progress endpoint pinned to server");
+        foreach (var path in new[] { "https://evil.test/", progressPath + "/0", progressPath + "?run=1", completion })
+        { try { Protocol.ProgressUrl(server, path); } catch (ArgumentException) { passed++; continue; } throw new Exception("Invalid progress path accepted"); }
+        Check(Protocol.ResumePositions(new[] { 35.5, 0 }, 2)[0] == 35.5, "resume positions keep seconds and part order");
+        foreach (var values in new[] { null, new double[0], new[] { -1.0 }, new[] { Double.NaN }, new[] { Double.PositiveInfinity }, new[] { 700000.0 } })
+        { try { Protocol.ResumePositions(values, 1); } catch (ArgumentException) { passed++; continue; } throw new Exception("Invalid resume positions accepted"); }
         foreach (var path in new[] { "https://evil.test/", completion + "/0", completion + "?run=1", "/api/plugin/ShokoMpc/stream/" + ticket })
         { try { Protocol.CompletionUrl(server, path); } catch (ArgumentException) { passed++; continue; } throw new Exception("Invalid completion path accepted"); }
         var tracking = new PlaybackProgress(new[] { server + named, server + named + "2" });
         Check(tracking.Position("99") == -1, "no progress before media identification");
         tracking.NowPlaying("Title\\|part|author|description|" + server + named + "|100.0");
         Check(tracking.Current == 0 && tracking.Position("89.99") == -1, "escaped metadata and below threshold");
+        double seconds;
+        Check(tracking.TryPosition("23.75", out seconds) && seconds == 23.75, "partial positions retain subsecond precision");
+        Check(tracking.TryPosition("0", out seconds) && seconds == 0, "intentional seek to beginning is valid");
         Check(tracking.Position("90") == 0 && tracking.Position("100") == 0, "ninety percent threshold");
         Check(tracking.Position("NaN") == -1 && tracking.Position("Infinity") == -1 && tracking.Position("-1") == -1 && tracking.Position("9999") == -1, "invalid positions ignored");
         tracking.NowPlaying("t|a|d|https://other.test/movie|100");

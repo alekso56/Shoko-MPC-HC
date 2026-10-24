@@ -14,18 +14,18 @@
   "icon": null,
   "releases": [
     {
-      "version": "0.2.0",
-      "tag": "v0.2.0",
-      "source_revision": "8669ba81f837874905a6646ae7c769be06e1eecf",
+      "version": "0.3.0",
+      "tag": "v0.3.0",
+      "source_revision": null,
       "released_at": "2026-10-24T00:00:00Z",
       "channel": "Stable",
-      "release_notes": "Mark episodes watched when MPC-HC reaches 90%. Update Windows Setup for watched syncing. Targets Shoko 6 dev.550 / Abstractions alpha.112. No resume sync or external subtitle handoff.",
+      "release_notes": "Save playback position in Shoko and resume on reopening. Finished episodes clear their bookmark at 90%. Update Windows Setup. Targets Shoko 6 dev.550 / Abstractions alpha.112.",
       "archives": [
         {
           "runtime": "any",
           "abstraction": "6.0.0",
-          "url": "https://github.com/alekso56/Shoko-MPC-HC/releases/download/v0.2.0/ShokoMpc-v0.2.0-any.zip",
-          "checksum": "3776e939ced0061aae0374a2775928b5da7e76744c29d6a882d7121012c5f3d7"
+          "url": "https://github.com/alekso56/Shoko-MPC-HC/releases/download/v0.3.0/ShokoMpc-v0.3.0-any.zip",
+          "checksum": "5190aaaa668c50420bb1ced899b417d4209b19ec690a7050a5b321561c006f67"
         }
       ]
     }

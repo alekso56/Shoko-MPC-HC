@@ -50,6 +50,21 @@ Watched updates retry temporary network failures. If saving fails, a Windows
 message asks you to mark the episode manually. Refresh Shoko to see the change.
 Update both the server plugin and Windows Setup to enable this feature.
 
+RESUME PLAYBACK
+Version 0.3.0 saves your position in Shoko for the account that launched the
+episode. Reopening it through the MPC-HC button seeks to that position once
+the file loads. Bookmarks are saved every five seconds while playing, on
+pause, and from the last observed position when the player stops or closes.
+Closing immediately after a seek can lose up to one second of observation;
+a force-closed helper or interrupted network may lose unsaved progress.
+Reaching 90% clears the bookmark, so a finished episode starts at the beginning.
+Seeking backwards before completion updates the bookmark. Stopping does not
+overwrite it with MPC-HC's reset-to-zero position. A newer launch takes over
+the file so delayed reports from the previous launch cannot overwrite it.
+Each file in a multipart episode has its own bookmark, restored when loaded.
+Update both the plugin and Windows Setup. Older handlers still play and sync
+watched status, but do not save or restore position.
+
 SECURITY AND LIMITATIONS
 The server uses your existing Shoko browser session for launch authorization.
 The handler receives only an opaque, single-use ticket valid for 90 seconds.
@@ -61,7 +76,7 @@ The handler pins the server address and rejects arbitrary URLs, executables,
 redirects, extra protocol parameters, and shell arguments. It never invokes
 a shell. Keep the setup folder and installed settings writable only by you.
 This release streams original video files, with byte-range seeking. It does
-not transcode, restore resume position, or transfer
+not transcode or transfer
 separate subtitle files. Embedded subtitles remain in the original video.
 Watched-status writes use a separate expiring capability limited to this
 launch's files and account. Stream URLs cannot change watched status. The
