@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer"><title>Seasonal anime · Shoko</title>
+  <link rel="stylesheet" href="style.css"><script defer src="app.js"></script>
+</head>
+<body>
+  <header class="shell-header">
+    <a class="brand" href="../../../webui/" aria-label="Back to Shoko"><span class="brand-mark">S</span> SHOKO <span class="brand-sub">SEASONS</span></a>
+    <nav aria-label="Main"><button id="browse-tab" class="nav-button active" aria-current="page">Seasonal anime</button><button id="list-tab" class="nav-button">My list <span id="list-count" class="count">0</span></button></nav>
+    <button id="notifications-button" class="notification-button" aria-expanded="false">Notifications <span id="notice-count" class="count">0</span></button>
+  </header>
+  <main>
+    <div id="notifications" class="notifications" hidden><div class="section-heading"><h2>Ready to watch</h2><button id="read-notices" class="quiet">Mark all read</button></div><div id="notice-items"></div><p class="muted small">Notifications are saved here, even while this page is closed.</p></div>
+    <div class="page-heading"><div><p class="eyebrow" id="eyebrow">DISCOVER YOUR NEXT WATCH</p><h1 id="page-title">Seasonal anime</h1><p id="page-subtitle" class="muted">Explore the season. Add a series. Follow it into your Shoko library.</p></div><a class="library-link" href="../../../webui/collection">Open Shoko library ↗</a></div>
+    <section id="season-controls" class="season-controls" aria-label="Season navigation">
+      <button id="previous" class="arrow" aria-label="Previous season">←</button>
+      <div id="season-tabs" class="season-tabs" role="group" aria-label="Season"><button data-season="WINTER">Winter</button><button data-season="SPRING">Spring</button><button data-season="SUMMER">Summer</button><button data-season="FALL">Fall</button></div>
+      <label class="year-label"><span class="sr-only">Year</span><select id="year"></select></label>
+      <button id="next" class="arrow" aria-label="Next season">→</button><button id="current" class="quiet">This season</button>
+    </section>
+    <div class="filters"><label class="search-box"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Search this season" aria-label="Search titles"></label><label><span class="sr-only">Format</span><select id="format"><option value="">All formats</option><option value="TV">TV</option><option value="ONA">ONA</option><option value="OVA">OVA</option><option value="MOVIE">Movies</option><option value="SPECIAL">Specials</option></select></label><label><span class="sr-only">Sort</span><select id="sort"><option value="popular">Most popular</option><option value="score">Highest rated</option><option value="title">Title A–Z</option></select></label><span id="result-count" class="muted small"></span></div>
+    <div id="message" class="message" role="status" hidden></div>
+    <div id="setup-message" class="message" role="status" hidden></div>
+    <div id="activity-message" class="message" role="status" hidden></div>
+    <div id="catalog" class="catalog" aria-live="polite"></div>
+    <div id="empty" class="empty" hidden><h2>No titles found</h2><p class="muted">Try another season or clear your filters.</p></div>
+    <footer>Seasonal catalog and ratings from <a href="https://anilist.co" target="_blank" rel="noopener noreferrer">AniList</a> · Anime mappings by <a href="https://github.com/Fribb/anime-lists" target="_blank" rel="noopener noreferrer">Fribb</a><span>Downloads through Sonarr · Ready status from Shoko</span></footer>
+  </main>
+  <dialog id="add-dialog" aria-labelledby="add-title"><form method="dialog"><button class="close quiet" aria-label="Close">×</button></form><p class="eyebrow">ADD TO MY LIST</p><h2 id="add-title"></h2><p class="muted">Confirm the series and season Sonarr should monitor and search for.</p><form id="match-search" class="match-search"><input id="match-query" aria-label="Search Sonarr" placeholder="Search Sonarr by title" maxlength="120"><button class="quiet">Search</button></form><p id="match-message" role="status" class="muted"></p><div id="candidates"></div><p class="small muted">Uses your quality profile and folder from Shokarr. Other seasons keep their current settings. A Sonarr season may contain more than one anime cour.</p><div class="dialog-actions"><button id="cancel-add" class="quiet">Cancel</button><button id="confirm-add" class="primary" disabled>Add & search</button></div></dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>
