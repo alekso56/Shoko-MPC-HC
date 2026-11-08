@@ -7,7 +7,7 @@
   const today = new Date();
   const current = { year: today.getFullYear(), season: seasons[Math.floor(today.getMonth() / 3)] };
   let year = current.year, season = current.season, view = 'browse', items = [], requestVersion = 0;
-  let status = { entries: [], library: [], notifications: [], canAdd: false }, selectedAnime = null;
+  let status = { entries: [], library: [], notifications: [], canAdd: false, checkedIds: [] }, selectedAnime = null;
   let statusBusy = false, matchVersion = 0, candidates = [], loading = false, statusTimer;
   const cache = new Map();
   const seenNotices = new Set();
@@ -141,7 +141,8 @@
     for (const [id, card] of cards) {
       const entry = status.entries.find(e => e.animeId === id);
       const library = status.library.find(e => e.animeId === id);
-      const signature = JSON.stringify([entry, library, status.canAdd]);
+      const libraryChecked = status.checkedIds.includes(id);
+      const signature = JSON.stringify([entry, library, status.canAdd, libraryChecked]);
       if (signature === card.signature) continue;
       card.signature = signature;
       const footer = card.footer; footer.replaceChildren();
@@ -156,12 +157,12 @@
         if (entry.message) footer.append(node('p', 'status-detail', entry.message));
       } else if (available) footer.append(node('div', 'status-label ready', `${available} episode${available === 1 ? '' : 's'} in Shoko`));
       const actions = node('div', 'card-actions');
-      if (shokoId && available) actions.append(link('Open episodes ↗', shokoUrl(shokoId), 'ready-link'));
+      if (shokoId) actions.append(link(available ? 'Open episodes ↗' : 'Open series ↗', shokoUrl(shokoId), 'ready-link'));
       const retry = entry && ['Search failed', 'Adding', 'Removed from Sonarr'].includes(entry.state);
       if (!entry || retry) {
         const unsupported = ['MOVIE', 'MUSIC'].includes(card.anime.format);
-        const button = node('button', 'primary add-button', retry ? 'Retry request' : unsupported ? 'Not supported by Sonarr' : '+ Add to list');
-        button.disabled = !status.canAdd || unsupported;
+        const button = node('button', 'primary add-button', shokoId ? 'Already in Shoko' : !libraryChecked ? 'Checking library…' : retry ? 'Retry request' : unsupported ? 'Not supported by Sonarr' : '+ Add to list');
+        button.disabled = !!shokoId || !libraryChecked || !status.canAdd || unsupported;
         if (!status.canAdd) button.title = status.setupError || 'A Shoko administrator can add downloads.';
         button.onclick = () => openAdd(card.anime);
         actions.append(button);
@@ -174,11 +175,12 @@
   async function refreshStatus() {
     if (statusBusy) return;
     statusBusy = true;
-    const ids = items.map(a => a.id).join(',');
+    const requestedIds = [...new Set(items.map(a => a.id).concat(status.entries.map(e => e.animeId)))];
+    const ids = requestedIds.join(',');
     try {
       const result = await api('/status' + (ids ? '?ids=' + ids : ''));
       const previousIds = status.entries.map(e => e.animeId).join(',');
-      status = result;
+      status = { ...result, checkedIds: requestedIds };
       message('setup-message', result.setupError);
       message('activity-message', result.activityError);
       if (view === 'list' && previousIds !== result.entries.map(e => e.animeId).join(',')) render(); else renderStatuses();

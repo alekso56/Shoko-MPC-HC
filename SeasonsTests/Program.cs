@@ -30,9 +30,9 @@ var provider = new Provider();
 var http = new HttpClient(provider);
 var catalog = new AnimeCatalog(http, paths);
 var sonarr = new SonarrGateway(http, () => new("http://sonarr.test", "fixture-key", 4, "/anime"));
-var count = 0; var allowed = true; var admin = true;
+var count = 0; var allowed = true; var admin = true; var inLibrary = false;
 var series = Stub.Make<IShokoSeries>((m, _) => m.Name switch { "get_LocalID" => 44, "get_LocalEpisodeCounts" => new EpisodeCounts { Episodes = count }, _ => null });
-var metadata = Stub.Make<IMetadataService>((m, args) => m.Name is "GetShokoSeriesByAnidbID" or "GetShokoSeriesByID" ? series : null);
+var metadata = Stub.Make<IMetadataService>((m, args) => inLibrary && m.Name is "GetShokoSeriesByAnidbID" or "GetShokoSeriesByID" ? series : null);
 var user = Stub.Make<IUser>((m, _) => m.Name switch { "get_LocalID" => 7, "get_IsAdmin" => admin, "IsAllowedToSee" => allowed, _ => null });
 var other = Stub.Make<IUser>((m, _) => m.Name switch { "get_LocalID" => 8, "get_IsAdmin" => true, "IsAllowedToSee" => true, _ => null });
 var users = Stub.Make<IUserService>((m, _) => m.Name is "GetUserFromHttpContext" or "GetUserByID" ? user : null);
@@ -73,7 +73,7 @@ provider.Queue = [];
 provider.Series["seasons"]![1]!["statistics"] = JsonNode.Parse("{\"episodeFileCount\":2}");
 await list.Refresh(default);
 Check((await list.Snapshot(user, default)).Entries.Single().State == "Waiting for Shoko", "Sonarr files are not prematurely called ready in Shoko");
-count = 2; await list.Refresh(default);
+inLibrary = true; count = 2; await list.Refresh(default);
 var snapshot = await list.Snapshot(user, default);
 Check(snapshot.Entries.Single().State == "Ready in Shoko" && snapshot.Notices.Single().Episodes == 2, "identified Shoko episodes produce a ready notification");
 await list.Refresh(default);
@@ -83,6 +83,15 @@ Check((await list.Snapshot(user, default)).Notices.Length == 2, "new arriving ep
 await list.MarkRead(user, default);
 var reloaded = new SeasonList(catalog, sonarr, metadata, users, paths, NullLogger<SeasonList>.Instance);
 Check((await reloaded.Snapshot(user, default)).Notices.All(n => n.Read), "list and read notifications survive restart");
+var searchesBefore = provider.Searches;
+try { await list.Add(other, new(10, 100, 2), default); throw new Exception("Expected existing series rejection"); }
+catch (SeasonException e) { Check(e.Status == 409 && e.Message.Contains("already in"), "existing Shoko anime rejected before Sonarr mutations"); }
+Check(provider.Searches == searchesBefore && (await list.Snapshot(other, default)).Entries.Length == 0, "blocked request adds no list entry and starts no search");
+count = 0;
+Check((await list.Library(user, [10], default)).Length == 1, "Shoko series is recognized even when it has no playable files");
+try { await list.Add(other, new(10, 100, 2), default); throw new Exception("Expected existing empty series rejection"); }
+catch (SeasonException e) { Check(e.Status == 409, "existing empty Shoko series also blocks add"); }
+count = 3;
 allowed = false;
 snapshot = await reloaded.Snapshot(user, default);
 Check(snapshot.Notices.Length == 0 && snapshot.Entries.Single().ShokoId is null, "revoked series access hides ready links and notifications");

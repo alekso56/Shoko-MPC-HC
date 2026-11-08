@@ -9,7 +9,7 @@ if (-not $SkipTests) {
     if ($LASTEXITCODE) { throw 'Seasonal DOM tests failed. Install Tests/package.json dependencies first.' }
 }
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
-$version = '0.1.0'
+$version = '0.1.1'
 $tag = "seasons-v$version"
 $archiveName = "ShokoSeasons-v$version-any.zip"
 $dll = Join-Path $PSScriptRoot 'ShokoSeasons\bin\Release\net10.0\ShokoSeasons.dll'
@@ -21,7 +21,7 @@ $manifest = [ordered]@{
     authors='alekso56'; repository_url='https://github.com/alekso56/Shoko-MPC-HC'; homepage_url=$null;
     tags=@('seasonal','anime','sonarr','webui'); thumbnail=$null; icon=$null;
     releases=@([ordered]@{version=$version; tag=$tag; source_revision=$null; released_at='2026-11-08T00:00:00Z'; channel='Stable';
-        release_notes='Seasonal catalog, quick season navigation, Sonarr season requests, download progress and persistent Shoko ready notifications. Requires configured Shokarr. Targets Shoko 6 dev.550 / Abstractions alpha.112.';
+        release_notes='Disable Add to list for anime already in Shoko and enforce the same rule on the server. Keep episode links available. Requires configured Shokarr and Shoko 6 dev.550 / Abstractions alpha.112.';
         archives=@([ordered]@{runtime='any'; abstraction='6.0.0'; url="https://github.com/alekso56/Shoko-MPC-HC/releases/download/$tag/$archiveName"; checksum=$checksum})})
 }
 $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $PSScriptRoot 'manifest.seasons.json') -Encoding UTF8

@@ -57,7 +57,7 @@ public sealed class SeasonList : BackgroundService
             var series = metadata.GetShokoSeriesByAnidbID(mapping.AnidbId.Value);
             if (series is null || !user.IsAllowedToSee(series)) { continue; }
             var count = series.LocalEpisodeCounts.Episodes + series.LocalEpisodeCounts.Specials;
-            if (count > 0) { result.Add(new { animeId = id, shokoId = series.LocalID, availableEpisodes = count }); }
+            result.Add(new { animeId = id, shokoId = series.LocalID, availableEpisodes = count });
         }
         return result.ToArray();
     }
@@ -69,6 +69,7 @@ public sealed class SeasonList : BackgroundService
         var anime = await catalog.GetAnime(request.AnimeId, ct);
         if (anime.Format is "MOVIE" or "MUSIC") { throw new SeasonException("Sonarr supports series. This title cannot be requested through Sonarr.", 400); }
         var mapping = (await catalog.GetMappings(ct)).GetValueOrDefault(anime.Id);
+        RejectExistingSeries(mapping, user);
         var candidates = await sonarr.Find("tvdb:" + request.TvdbId, null, ct);
         if (!candidates.Any(x => x.TvdbId == request.TvdbId && x.Seasons.Contains(request.Season)))
         {
@@ -77,6 +78,7 @@ public sealed class SeasonList : BackgroundService
         await gate.WaitAsync(ct);
         try
         {
+            RejectExistingSeries(mapping, user);
             var old = saved.Entries.FirstOrDefault(x => x.UserId == user.LocalID && x.AnimeId == anime.Id);
             if (old is not null && old.State is not ("Search failed" or "Adding" or "Removed from Sonarr")) { return old; }
             if (old is not null && (old.TvdbId != request.TvdbId || old.Season != request.Season))
@@ -105,6 +107,16 @@ public sealed class SeasonList : BackgroundService
             return entry;
         }
         finally { gate.Release(); }
+    }
+
+    private void RejectExistingSeries(AnimeMapping? mapping, IUser user)
+    {
+        if (mapping?.AnidbId is > 0 && metadata.GetShokoSeriesByAnidbID(mapping.AnidbId.Value) is { } series)
+        {
+            throw new SeasonException(user.IsAllowedToSee(series)
+                ? "This anime is already in your Shoko library. Open its episodes from the catalog."
+                : "This anime is unavailable to your Shoko account.", 409);
+        }
     }
 
     public async Task MarkRead(IUser user, CancellationToken ct)

@@ -8,7 +8,7 @@ const dom = new JSDOM(fs.readFileSync(path.join(directory, 'index.html'), 'utf8'
 });
 const w = dom.window, d = w.document, requests = [];
 const pause = () => new Promise(resolve => setTimeout(resolve, 30));
-let pendingWinter, pendingSpring, entries = [], notifications = [];
+let pendingWinter, pendingSpring, entries = [], notifications = [], library = [];
 const anime = { id: 10, malId: 20, title: '<img src=x onerror=alert(1)> Anime', originalTitle: 'Original', description: '<script>evil()</script>', cover: '', format: 'TV', genres: ['Action'], score: 85, episodes: 12 };
 w.localStorage.setItem('apiSession', JSON.stringify({ apikey: 'fixture' }));
 w.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
@@ -20,7 +20,7 @@ w.fetch = async (url, options) => {
     if (url.includes('WINTER')) data = await new Promise(resolve => { pendingWinter = resolve; });
     else if (url.includes('SPRING')) data = await new Promise(resolve => { pendingSpring = resolve; });
     else data = { items: [anime], stale: false };
-  } else if (url.includes('/status')) data = { entries, notifications, library: [], canAdd: true, userId: 7 };
+  } else if (url.includes('/status')) data = { entries, notifications, library, canAdd: true, userId: 7 };
   else if (url.includes('/matches')) data = { mapped: true, candidates: [{ tvdbId: 100, title: 'Matched anime', year: 2026, overview: 'Series overview', seasons: [1, 2, 3], suggestedSeason: 2 }] };
   else if (url.endsWith('/notifications/read')) { notifications = notifications.map(n => ({ ...n, read: true })); data = {}; }
   else if (url.endsWith('/list')) { data = { animeId: 10, title: anime.title, season: 2, state: 'Downloading', progress: 45, availableEpisodes: 0 }; entries = [data]; }
@@ -41,6 +41,15 @@ function check(value, label) { assert(value, label); passed++; console.log('PASS
   check(d.querySelector('.card-title').textContent === 'Spring title', 'late season response cannot replace current season');
   d.querySelector('[data-season="FALL"]').click(); await pause();
   check(requests.filter(r => r.url.includes('/catalog') && r.url.includes('FALL')).length === 1, 'returning to season uses browser cache');
+  library = [{ animeId: 10, shokoId: 44, availableEpisodes: 12 }];
+  d.dispatchEvent(new w.Event('visibilitychange')); await pause();
+  check(d.querySelector('.add-button').disabled && d.querySelector('.add-button').textContent === 'Already in Shoko', 'owned anime shows a disabled Already in Shoko button');
+  d.querySelector('.add-button').click(); await pause();
+  check(!d.getElementById('add-dialog').open && !requests.some(r => r.url.includes('/matches')), 'owned anime cannot open the request dialog');
+  library = [{ animeId: 10, shokoId: 44, availableEpisodes: 0 }];
+  d.dispatchEvent(new w.Event('visibilitychange')); await pause();
+  check(d.querySelector('.add-button').disabled, 'existing empty Shoko series remains blocked');
+  library = []; d.dispatchEvent(new w.Event('visibilitychange')); await pause();
   d.querySelector('.add-button').click(); await pause();
   check(d.getElementById('add-dialog').open && d.getElementById('candidate-season-0').value === '2', 'add dialog suggests mapped TVDB season');
   check(!requests.some(r => r.url.endsWith('/list')), 'opening the match dialog starts no downloads');

@@ -17,7 +17,9 @@ Open Seasonal anime from the Web UI shortcut or the plugin page. The plugin adds
 Use
 Choose a season and year, or use the previous/next/This season controls. Search and format filters apply to the complete selected season. Cached seasons reopen immediately. The catalog omits adult-tagged titles. Ratings are AniList scores, displayed out of ten; MAL links open MyAnimeList details.
 
-Add to list opens a Sonarr match and season selector. Confirming Add & search monitors and searches the selected TVDB season. An anime cour can share a TVDB season with another cour. Existing monitoring and quality settings on other seasons are preserved. Movies and music entries remain browsable but cannot be added to Sonarr. Download actions require a Shoko administrator.
+Add to list is disabled for anime already in the Shoko library, including series entries without playable files. The server also rejects these requests before changing Sonarr. Existing titles keep their Open episodes/series link. Buttons stay disabled until the library check finishes.
+
+For anime outside Shoko, Add to list opens a Sonarr match and season selector. Confirming Add & search monitors and searches the selected TVDB season. An anime cour can share a TVDB season with another cour. Existing monitoring and quality settings on other seasons are preserved. Movies and music entries remain browsable but cannot be added to Sonarr. Download actions require a Shoko administrator.
 
 My list is saved per Shoko user. Progress is Sonarr's byte progress for active downloads of the selected season, not a prediction of whole-season completion. Pack rows are deduplicated. Queued, paused, failed/import-warning, waiting-for-release and waiting-for-Shoko states are distinguished. Sonarr errors preserve the last known state with a stale-status warning. Add requests are idempotent after success; an interrupted or failed search exposes Retry request.
 
