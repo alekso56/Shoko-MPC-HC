@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Shoko.Abstractions.Metadata.Services;
+using Shoko.Abstractions.Core.Services;
 using Shoko.Abstractions.Plugin;
 using Shoko.Abstractions.User;
 using Shoko.Abstractions.User.Services;
@@ -15,19 +16,21 @@ public sealed class SeasonList : BackgroundService
     private readonly IMetadataService metadata;
     private readonly IUserService users;
     private readonly ILogger<SeasonList> logger;
+    private readonly ISystemService system;
     private readonly string path;
     private readonly SemaphoreSlim gate = new(1, 1);
     private SavedList saved;
     public string? ActivityError { get; private set; }
 
     public SeasonList(AnimeCatalog catalog, SonarrGateway sonarr, IMetadataService metadata,
-        IUserService users, IApplicationPaths paths, ILogger<SeasonList> logger)
+        IUserService users, IApplicationPaths paths, ILogger<SeasonList> logger, ISystemService system)
     {
         this.catalog = catalog;
         this.sonarr = sonarr;
         this.metadata = metadata;
         this.users = users;
         this.logger = logger;
+        this.system = system;
         path = Path.Combine(paths.DatabasePath, Plugin.PluginId, "requests.json");
         // Corrupt durable state must fail visibly, rather than discard the user's list.
         saved = File.Exists(path) ? JsonSerializer.Deserialize<SavedList>(File.ReadAllText(path))
@@ -141,6 +144,8 @@ public sealed class SeasonList : BackgroundService
 
     public async Task Refresh(CancellationToken ct)
     {
+        // Hosted services start before Shoko initializes its repositories. Persisted requests must wait.
+        if (!system.IsStarted) { return; }
         await gate.WaitAsync(ct);
         try
         {
@@ -189,7 +194,8 @@ public sealed class SeasonList : BackgroundService
         {
             try { await Refresh(stoppingToken); }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
-            catch (Exception e) when (e is HttpRequestException or SeasonException or IOException or JsonException or TaskCanceledException)
+            // A plugin polling failure must never stop the host. Keep the last saved snapshot and retry.
+            catch (Exception e)
             {
                 ActivityError = "Live status is unavailable. The last known status is shown; retrying automatically.";
                 logger.LogWarning("Seasonal activity refresh failed ({ErrorType}).", e.GetType().Name);

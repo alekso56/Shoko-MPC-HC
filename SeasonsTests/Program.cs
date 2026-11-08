@@ -15,6 +15,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Shoko.Abstractions.Metadata;
+using Shoko.Abstractions.Core.Services;
 using Shoko.Abstractions.Metadata.Services;
 using Shoko.Abstractions.Metadata.Shoko;
 using Shoko.Abstractions.Plugin;
@@ -36,7 +37,9 @@ var metadata = Stub.Make<IMetadataService>((m, args) => inLibrary && m.Name is "
 var user = Stub.Make<IUser>((m, _) => m.Name switch { "get_LocalID" => 7, "get_IsAdmin" => admin, "IsAllowedToSee" => allowed, _ => null });
 var other = Stub.Make<IUser>((m, _) => m.Name switch { "get_LocalID" => 8, "get_IsAdmin" => true, "IsAllowedToSee" => true, _ => null });
 var users = Stub.Make<IUserService>((m, _) => m.Name is "GetUserFromHttpContext" or "GetUserByID" ? user : null);
-var list = new SeasonList(catalog, sonarr, metadata, users, paths, NullLogger<SeasonList>.Instance);
+var started = true;
+var system = Stub.Make<ISystemService>((m, _) => m.Name == "get_IsStarted" ? started : null);
+var list = new SeasonList(catalog, sonarr, metadata, users, paths, NullLogger<SeasonList>.Instance, system);
 
 var maps = AnimeCatalog.ParseMappings("[{\"anilist_id\":1,\"anidb_id\":2,\"tvdb_id\":3,\"season\":{\"tvdb\":2}},{\"anilist_id\":9,\"anidb_id\":8},{\"anilist_id\":9,\"anidb_id\":7}]");
 Check(maps[1].Season == 2 && !maps.ContainsKey(9), "exact season mappings retained; ambiguous anime mappings rejected");
@@ -81,8 +84,24 @@ Check((await list.Snapshot(user, default)).Notices.Length == 1, "unchanged libra
 count = 3; await list.Refresh(default);
 Check((await list.Snapshot(user, default)).Notices.Length == 2, "new arriving episodes generate another notification");
 await list.MarkRead(user, default);
-var reloaded = new SeasonList(catalog, sonarr, metadata, users, paths, NullLogger<SeasonList>.Instance);
+var reloaded = new SeasonList(catalog, sonarr, metadata, users, paths, NullLogger<SeasonList>.Instance, system);
 Check((await reloaded.Snapshot(user, default)).Notices.All(n => n.Read), "list and read notifications survive restart");
+started = false;
+var readsBeforeStartup = provider.ActivityReads;
+await reloaded.StartAsync(default);
+await Task.Delay(80);
+Check(provider.ActivityReads == readsBeforeStartup && !reloaded.ExecuteTask!.IsFaulted, "persisted list waits for Shoko startup without accessing repositories or providers");
+await reloaded.StopAsync(default);
+started = true;
+await reloaded.Refresh(default);
+Check(provider.ActivityReads > readsBeforeStartup, "persisted list refreshes after Shoko becomes ready");
+provider.FailActivity = true;
+var failingPoller = new SeasonList(catalog, sonarr, metadata, users, paths, NullLogger<SeasonList>.Instance, system);
+await failingPoller.StartAsync(default);
+await Task.Delay(80);
+Check(!failingPoller.ExecuteTask!.IsFaulted && failingPoller.ActivityError is not null, "unexpected background failures are contained without stopping Shoko");
+await failingPoller.StopAsync(default);
+provider.FailActivity = false;
 var searchesBefore = provider.Searches;
 try { await list.Add(other, new(10, 100, 2), default); throw new Exception("Expected existing series rejection"); }
 catch (SeasonException e) { Check(e.Status == 409 && e.Message.Contains("already in"), "existing Shoko anime rejected before Sonarr mutations"); }
@@ -132,9 +151,10 @@ public class Provider : HttpMessageHandler
     public JsonNode? Series = JsonNode.Parse("{\"id\":5,\"tvdbId\":100,\"title\":\"Test anime\",\"seasons\":[{\"seasonNumber\":1,\"monitored\":true},{\"seasonNumber\":2,\"monitored\":false},{\"seasonNumber\":3,\"monitored\":false}]}");
     public JsonArray Queue = [];
     public bool Exists = true;
+    public bool FailActivity;
     public JsonNode? Added;
     public int[] Monitored = [];
-    public int Searches, CatalogQueries;
+    public int Searches, CatalogQueries, ActivityReads;
     public JsonNode? LastCommand;
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
     {
@@ -158,7 +178,7 @@ public class Provider : HttpMessageHandler
             else if (path.StartsWith("/api/v3/episode?")) result = JsonNode.Parse("[{\"id\":11,\"seasonNumber\":1},{\"id\":22,\"seasonNumber\":2},{\"id\":33,\"seasonNumber\":3}]")!;
             else if (path == "/api/v3/episode/monitor") { var data = await request.Content!.ReadFromJsonAsync<JsonNode>(ct); Monitored = data.Array("episodeIds").Select(x => x!.GetValue<int>()).ToArray(); result = new JsonObject(); }
             else if (path == "/api/v3/command") { Searches++; LastCommand = await request.Content!.ReadFromJsonAsync<JsonNode>(ct); result = new JsonObject(); }
-            else if (path.StartsWith("/api/v3/queue?")) result = new JsonObject { ["totalRecords"] = Queue.Count, ["records"] = Queue.DeepClone() };
+            else if (path.StartsWith("/api/v3/queue?")) { ActivityReads++; if (FailActivity) throw new InvalidOperationException("Simulated provider failure"); result = new JsonObject { ["totalRecords"] = Queue.Count, ["records"] = Queue.DeepClone() }; }
             else throw new Exception("Unexpected provider route " + path);
         }
         return new(HttpStatusCode.OK) { Content = JsonContent.Create(result) };
