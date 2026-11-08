@@ -7,9 +7,13 @@ if (-not $SkipTests) {
     if ($LASTEXITCODE) { throw 'Seasonal backend tests failed.' }
     node (Join-Path $PSScriptRoot 'Tests\seasons.cjs')
     if ($LASTEXITCODE) { throw 'Seasonal DOM tests failed. Install Tests/package.json dependencies first.' }
+    node (Join-Path $PSScriptRoot 'Tests\seasons.cjs') --dashboard
+    if ($LASTEXITCODE) { throw 'Embedded catalog tests failed.' }
+    node (Join-Path $PSScriptRoot 'Tests\seasons-dashboard.cjs')
+    if ($LASTEXITCODE) { throw 'Dashboard integration tests failed.' }
 }
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
-$version = '0.1.2'
+$version = '0.1.3'
 $tag = "seasons-v$version"
 $archiveName = "ShokoSeasons-v$version-any.zip"
 $dll = Join-Path $PSScriptRoot 'ShokoSeasons\bin\Release\net10.0\ShokoSeasons.dll'
@@ -21,7 +25,7 @@ $manifest = [ordered]@{
     authors='alekso56'; repository_url='https://github.com/alekso56/Shoko-MPC-HC'; homepage_url=$null;
     tags=@('seasonal','anime','sonarr','webui'); thumbnail=$null; icon=$null;
     releases=@([ordered]@{version=$version; tag=$tag; source_revision=$null; released_at='2026-11-08T00:00:00Z'; channel='Stable';
-        release_notes='Block requests for anime already in Shoko. Wait for Shoko startup before refreshing saved requests, and isolate background polling failures. Requires configured Shokarr and Shoko 6 dev.550 / Abstractions alpha.112.';
+        release_notes='Add a seasonal catalog card above the Shoko dashboard, with quick season switching and a saved show/hide control. Requires configured Shokarr and Shoko 6 dev.550 / Abstractions alpha.112.';
         archives=@([ordered]@{runtime='any'; abstraction='6.0.0'; url="https://github.com/alekso56/Shoko-MPC-HC/releases/download/$tag/$archiveName"; checksum=$checksum})})
 }
 $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $PSScriptRoot 'manifest.seasons.json') -Encoding UTF8

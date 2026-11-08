@@ -561,3 +561,11 @@
                                                                                                                                                                                                                                                                                       .card-actions button{
                                                                                                                                                                                                                                                                                         min-height:44px}
                                                                                                                                                                                                                                                                                       }
+
+/* Compact shell when the catalog is embedded in Shoko's dashboard card. */
+.dashboard .shell-header { position:static; padding:12px 16px; gap:12px; flex-wrap:wrap; }
+.dashboard .brand, .dashboard .page-heading, .dashboard main > footer { display:none; }
+.dashboard main { max-width:none; padding:16px; }
+.dashboard .season-controls { margin-top:0; padding:10px; }
+.dashboard .filters { margin:16px 0; }
+.dashboard .catalog { grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr)); }

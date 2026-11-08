@@ -4,7 +4,7 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 const directory = path.join(__dirname, '../ShokoSeasons/Web');
 const dom = new JSDOM(fs.readFileSync(path.join(directory, 'index.html'), 'utf8'), {
-  url: 'http://localhost/api/plugin/ShokoSeasons/?year=2026&season=FALL', runScripts: 'outside-only', pretendToBeVisual: true
+  url: 'http://localhost/api/plugin/ShokoSeasons/?year=2026&season=FALL' + (process.argv.includes('--dashboard') ? '&dashboard=1' : ''), runScripts: 'outside-only', pretendToBeVisual: true
 });
 const w = dom.window, d = w.document, requests = [];
 const pause = () => new Promise(resolve => setTimeout(resolve, 30));
@@ -63,6 +63,10 @@ function check(value, label) { assert(value, label); passed++; console.log('PASS
   entries = [{ ...entries[0], state: 'Ready in Shoko', progress: null, shokoId: 44, availableEpisodes: 2 }];
   w.document.dispatchEvent(new w.Event('visibilitychange')); await pause();
   check(d.querySelector('.ready-link').href.endsWith('/webui/collection/series/44/episodes') && d.getElementById('notice-count').textContent === '1', 'ready event links to Shoko episodes and updates unread count');
+  if (process.argv.includes('--dashboard')) {
+    check(d.body.classList.contains('dashboard') && new URLSearchParams(w.location.search).get('dashboard') === '1', 'compact dashboard mode survives season and list navigation');
+    check(d.querySelector('.ready-link').target === '_top', 'episode links leave the frame for the main Shoko interface');
+  }
   d.getElementById('notifications-button').click(); await pause();
   check(d.querySelectorAll('.notice').length === 1 && !d.getElementById('notifications').hidden, 'notification inbox displays persisted event');
   d.getElementById('read-notices').click(); await pause();

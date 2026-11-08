@@ -14,6 +14,8 @@ https://raw.githubusercontent.com/alekso56/Shoko-MPC-HC/feature/seasonal-anime/m
 
 Open Seasonal anime from the Web UI shortcut or the plugin page. The plugin adds its own navigation shortcut without patching Shoko files. Removing the plugin removes the shortcut. It is independent of the MPC-HC plugin.
 
+The dashboard also shows a Seasonal anime card above the built-in cards, with the full season picker, catalog, requests and notifications. Hide card collapses it; Add seasonal anime card restores it. This preference is saved in this browser. Open full catalog opens the standalone page. Shoko has no plugin widget registry, so this card stays above its draggable layout and is controlled separately from Display Settings. Built-in card positions are preserved.
+
 Use
 Choose a season and year, or use the previous/next/This season controls. Search and format filters apply to the complete selected season. Cached seasons reopen immediately. The catalog omits adult-tagged titles. Ratings are AniList scores, displayed out of ten; MAL links open MyAnimeList details.
 

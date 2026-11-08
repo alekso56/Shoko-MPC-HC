@@ -3,6 +3,11 @@
   const base = location.pathname.replace(/\/$/, '');
   const root = base.slice(0, base.lastIndexOf('/api/plugin/'));
   const $ = id => document.getElementById(id);
+  const dashboard = new URLSearchParams(location.search).get('dashboard') === '1';
+  if (dashboard) {
+    document.body.classList.add('dashboard');
+    document.querySelectorAll('a').forEach(a => { if (a.origin === location.origin) a.target = '_top'; });
+  }
   const seasons = ['WINTER', 'SPRING', 'SUMMER', 'FALL'];
   const today = new Date();
   const current = { year: today.getFullYear(), season: seasons[Math.floor(today.getMonth() / 3)] };
@@ -43,7 +48,11 @@
   }
   let toastTimer;
   function toast(text) { $('toast').textContent = text; $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('toast').hidden = true; }, 7000); }
-  function link(text, url, className = '') { const a = node('a', className, text); a.href = url; return a; }
+  function link(text, url, className = '') {
+    const a = node('a', className, text); a.href = url;
+    if (dashboard && a.origin === location.origin) a.target = '_top';
+    return a;
+  }
   function shokoUrl(id) { return `${root}/webui/collection/series/${id}/episodes`; }
   function readUrl() {
     const params = new URLSearchParams(location.search);
@@ -54,6 +63,7 @@
   }
   function writeUrl() {
     const params = new URLSearchParams({ year, season }); if (view === 'list') params.set('view', 'list');
+    if (dashboard) params.set('dashboard', '1');
     history.pushState(null, '', '?' + params);
   }
   function updateNavigation() {
