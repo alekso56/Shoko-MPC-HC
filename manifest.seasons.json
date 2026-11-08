@@ -15,18 +15,18 @@
   "icon": null,
   "releases": [
     {
-      "version": "0.1.0",
-      "tag": "seasons-v0.1.0",
-      "source_revision": "b5947c9a7897c7a6ba39e5bfdb045bcbe5d4df75",
+      "version": "0.1.1",
+      "tag": "seasons-v0.1.1",
+      "source_revision": "f0fa426e1e10869cb0aee6ae20cc973ebbc5576e",
       "released_at": "2026-11-08T00:00:00Z",
       "channel": "Stable",
-      "release_notes": "Seasonal catalog, quick season navigation, Sonarr season requests, download progress and persistent Shoko ready notifications. Requires configured Shokarr. Targets Shoko 6 dev.550 / Abstractions alpha.112.",
+      "release_notes": "Disable Add to list for anime already in Shoko and enforce the same rule on the server. Keep episode links available. Requires configured Shokarr and Shoko 6 dev.550 / Abstractions alpha.112.",
       "archives": [
         {
           "runtime": "any",
           "abstraction": "6.0.0",
-          "url": "https://github.com/alekso56/Shoko-MPC-HC/releases/download/seasons-v0.1.0/ShokoSeasons-v0.1.0-any.zip",
-          "checksum": "0992b7c95248f943e207577702b969e5ebcb409ca8ad547fa30544094d931df1"
+          "url": "https://github.com/alekso56/Shoko-MPC-HC/releases/download/seasons-v0.1.1/ShokoSeasons-v0.1.1-any.zip",
+          "checksum": "6179e16fe01a54231800ad1721dd26d12fa63f1ed651b516b55227f5b91a6256"
         }
       ]
     }
