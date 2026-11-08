@@ -569,3 +569,40 @@
 .dashboard .season-controls { margin-top:0; padding:10px; }
 .dashboard .filters { margin:16px 0; }
 .dashboard .catalog { grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr)); }
+
+/* The iframe uses the active host theme instead of the standalone blue palette. */
+body.dashboard {
+  --bg:transparent;
+  --surface:var(--panel-background, #1a202c);
+  --raised:var(--panel-background-alt, #222a39);
+  --border:var(--panel-border, #30394a);
+  --text:var(--panel-text, #edf0f7);
+  --muted:color-mix(in srgb, var(--text) 75%, transparent);
+  --blue:var(--panel-text-primary, #91b4ff);
+  --accent:var(--button-primary, #4276e4);
+  --green:var(--panel-text-important, #8cdbb0);
+  --amber:var(--panel-text-warning, #f1ce89);
+  background:transparent;
+}
+.dashboard .shell-header { background:transparent; }
+.dashboard button { background:var(--button-secondary, var(--raised)); color:var(--button-secondary-text, var(--text)); }
+.dashboard button:hover { background:var(--button-secondary-hover, var(--raised)); }
+.dashboard .nav-button { background:transparent; color:var(--muted); }
+.dashboard .nav-button.active, .dashboard .season-tabs button.selected {
+  background:var(--panel-menu-item-background, var(--raised));
+  color:var(--panel-menu-item-text, var(--blue));
+  border-color:var(--border);
+}
+.dashboard input, .dashboard select { background:var(--panel-input, var(--raised)); }
+.dashboard .card-title, .dashboard .studio { color:var(--text); }
+.dashboard .genre, .dashboard .count { background:var(--panel-tags, var(--raised)); color:var(--text); }
+.dashboard .primary, .dashboard .count.unread {
+  background:var(--accent); color:var(--button-primary-text, white);
+  border-color:var(--button-primary-border, var(--accent));
+}
+.dashboard .primary:hover { background:var(--button-primary-hover, var(--accent)); }
+.dashboard progress, .dashboard progress::-webkit-progress-bar { background:var(--raised); }
+.dashboard .message { background:var(--raised); border-color:var(--amber); }
+.dashboard .candidate:has(input:checked) { background:var(--panel-menu-item-background, var(--raised)); }
+.dashboard dialog, .dashboard .toast { background:var(--panel-background-overlay, var(--surface)); }
+.dashboard .toast { color:var(--green); border-color:var(--green); }

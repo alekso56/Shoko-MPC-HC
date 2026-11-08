@@ -8,6 +8,35 @@
     document.body.classList.add('dashboard');
     document.querySelectorAll('a').forEach(a => { if (a.origin === location.origin) a.target = '_top'; });
   }
+  function syncDashboardTheme() {
+    if (!dashboard) return;
+    try {
+      // Theme variables are scoped to Shoko's body, not its document root.
+      // Read only presentation values from our same-origin host card.
+      const host = window.frameElement?.parentElement;
+      if (!host) return;
+      const theme = parent.getComputedStyle(host);
+      const properties = ['--panel-background', '--panel-background-alt', '--panel-background-overlay',
+        '--panel-border', '--panel-input', '--panel-tags', '--panel-text', '--panel-text-primary',
+        '--panel-text-important', '--panel-text-warning', '--panel-menu-item-background',
+        '--panel-menu-item-background-hover', '--panel-menu-item-text', '--button-primary',
+        '--button-primary-border', '--button-primary-hover', '--button-primary-text',
+        '--button-secondary', '--button-secondary-hover', '--button-secondary-text'];
+      for (const name of properties) {
+        const value = theme.getPropertyValue(name).trim();
+        if (value) document.body.style.setProperty(name, value);
+        else document.body.style.removeProperty(name);
+      }
+      document.body.style.fontFamily = theme.fontFamily;
+      document.body.style.fontWeight = theme.fontWeight;
+      document.body.style.colorScheme = theme.colorScheme;
+      // Reuse any already loaded custom fonts without loading another theme bundle.
+      if (document.fonts && parent.document.fonts) {
+        for (const font of parent.document.fonts) document.fonts.add(font);
+      }
+    } catch { /* The standalone compact URL keeps its default theme. */ }
+  }
+  syncDashboardTheme();
   const seasons = ['WINTER', 'SPRING', 'SUMMER', 'FALL'];
   const today = new Date();
   const current = { year: today.getFullYear(), season: seasons[Math.floor(today.getMonth() / 3)] };
@@ -183,6 +212,7 @@
     }
   }
   async function refreshStatus() {
+    syncDashboardTheme();
     if (statusBusy) return;
     statusBusy = true;
     const requestedIds = [...new Set(items.map(a => a.id).concat(status.entries.map(e => e.animeId)))];

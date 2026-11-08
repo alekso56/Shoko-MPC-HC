@@ -34,7 +34,7 @@
       if (hidden) return;
       const frame = document.createElement('iframe'); frame.id = 'shoko-seasons-dashboard-frame';
       frame.title = 'Seasonal anime catalog'; frame.src = home + '?dashboard=1';
-      frame.style.cssText = 'display:block;width:100%;height:640px;border:0';
+      frame.style.cssText = 'display:block;width:100%;height:1280px;border:0';
       card.append(frame);
     }
     toggle.onclick = () => {
@@ -50,8 +50,8 @@
     if (document.getElementById('shoko-seasons-link')) return;
     const anchor = document.createElement('a'); anchor.id = 'shoko-seasons-link'; anchor.href = home;
     anchor.textContent = '◈ Seasonal anime'; anchor.title = 'Browse seasonal anime and follow Sonarr downloads';
-    anchor.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:1000;background:#284c86;color:#edf3ff;padding:11px 16px;border:1px solid #5b80b9;border-radius:8px;font:600 13px system-ui;text-decoration:none;box-shadow:0 3px 12px #0004';
-    anchor.onfocus = () => { anchor.style.outline = '3px solid #a7c9ff'; };
+    anchor.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:1000;background:var(--button-primary,#284c86);color:var(--button-primary-text,#edf3ff);padding:11px 16px;border:1px solid var(--button-primary-border,#5b80b9);border-radius:8px;font:inherit;text-decoration:none;box-shadow:0 3px 12px #0004';
+    anchor.onfocus = () => { anchor.style.outline = '3px solid var(--panel-text-primary,#a7c9ff)'; };
     anchor.onblur = () => { anchor.style.outline = ''; };
     document.body.append(anchor);
   }

@@ -16,6 +16,8 @@ Open Seasonal anime from the Web UI shortcut or the plugin page. The plugin adds
 
 The dashboard also shows a Seasonal anime card above the built-in cards, with the full season picker, catalog, requests and notifications. Hide card collapses it; Add seasonal anime card restores it. This preference is saved in this browser. Open full catalog opens the standalone page. Shoko has no plugin widget registry, so this card stays above its draggable layout and is controlled separately from Display Settings. Built-in card positions are preserved.
 
+The dashboard catalog is 1280 pixels tall and inherits the active host card's theme colors, typography and loaded fonts. Its transparent background preserves Shoko's theme behind it. Theme values refresh with the regular status update. The standalone catalog keeps its own palette.
+
 Use
 Choose a season and year, or use the previous/next/This season controls. Search and format filters apply to the complete selected season. Cached seasons reopen immediately. The catalog omits adult-tagged titles. Ratings are AniList scores, displayed out of ten; MAL links open MyAnimeList details.
 
