@@ -1,0 +1,34 @@
+{
+  "id": "7b22d3ef-125d-4dca-9006-b7d256c04e03",
+  "name": "Shoko Seasons",
+  "overview": "Browse seasonal anime, add seasons to Sonarr, and follow downloads into Shoko with saved ready notifications.",
+  "authors": "alekso56",
+  "repository_url": "https://github.com/alekso56/Shoko-MPC-HC",
+  "homepage_url": null,
+  "tags": [
+    "seasonal",
+    "anime",
+    "sonarr",
+    "webui"
+  ],
+  "thumbnail": null,
+  "icon": null,
+  "releases": [
+    {
+      "version": "0.1.4",
+      "tag": "seasons-v0.1.4",
+      "source_revision": "bb395830dc54d4fcef7b1444425b5150b6a56122",
+      "released_at": "2026-11-08T00:00:00Z",
+      "channel": "Stable",
+      "release_notes": "Match the active Shoko theme inside the dashboard catalog and double its height to 1280 pixels. Requires configured Shokarr and Shoko 6 dev.550 / Abstractions alpha.112.",
+      "archives": [
+        {
+          "runtime": "any",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/alekso56/Shoko-MPC-HC/releases/download/seasons-v0.1.4/ShokoSeasons-v0.1.4-any.zip",
+          "checksum": "48b320404cba293f9f803b4d19870e3a42da9a736bc331becc6a844fcd2e3bc1"
+        }
+      ]
+    }
+  ]
+}
