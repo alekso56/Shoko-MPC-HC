@@ -14,18 +14,18 @@
   "icon": null,
   "releases": [
     {
-      "version": "0.4.1",
-      "tag": "v0.4.1",
-      "source_revision": "004b8e886b45defa5b9555ab4614370ae0a98e67",
+      "version": "0.5.0",
+      "tag": "v0.5.0",
+      "source_revision": "ecf939b6985d73290926d2253057a5122458bb8a",
       "released_at": "2026-11-25T00:00:00Z",
       "channel": "Stable",
-      "release_notes": "TV casting settings now live on the MPC-HC setup page, because current Shoko Web UI versions have no editor for plugin settings. Administrators can enter the agent URL, LAN base URL and agent secret there; the secret is never shown back. No Windows Setup update needed.",
+      "release_notes": "Choose which TV to cast to from a menu beside the TV button: the Wi-Fi Direct display or a Google Cast device found by the cast agent on your network. The choice is remembered per browser. Needs the matching cast agent update. No Windows Setup update needed.",
       "archives": [
         {
           "runtime": "any",
           "abstraction": "6.0.0",
-          "url": "https://github.com/alekso56/Shoko-MPC-HC/releases/download/v0.4.1/ShokoMpc-v0.4.1-any.zip",
-          "checksum": "b647c68d408bbab29ae2b0b8eccb5317e9b42c8bd02c63df1c397dd703542d1c"
+          "url": "https://github.com/alekso56/Shoko-MPC-HC/releases/download/v0.5.0/ShokoMpc-v0.5.0-any.zip",
+          "checksum": "d54b7c6f74f5ee1db256912e00b08e2eac5fdf9833968b78f4a0dcd02461817d"
         }
       ]
     }
