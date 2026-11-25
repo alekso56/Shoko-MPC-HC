@@ -80,6 +80,10 @@ Put the TV in mirroring mode, then click the TV button. The notice shows
 connecting, playing, stopped or an error, and offers Stop TV. One cast runs at
 a time; a new one replaces it. Position is saved to Shoko while casting, and
 reaching 90% marks the episode watched. Multi-part episodes cannot be cast yet.
+Since version 0.5.0, the menu button beside the TV button lists where you can
+cast: the Wi-Fi Direct display and any Google Cast devices the cast agent finds
+on your network. Those devices play the original file themselves, so their
+own player shows the subtitles. The choice is remembered in this browser.
 The browser never receives the agent secret or stream tokens. This release
 needs no Windows Setup update.
 
