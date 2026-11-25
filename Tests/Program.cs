@@ -21,6 +21,7 @@ using Shoko.Abstractions.User.Update;
 using Shoko.Abstractions.Video;
 using Shoko.Abstractions.Video.Services;
 using ShokoMpc;
+using ShokoMpc.Casting;
 
 var passed = 0;
 void Check(bool value, string label) { if (!value) throw new Exception("FAIL: " + label); Console.WriteLine("PASS: " + label); passed++; }
@@ -64,10 +65,16 @@ var userData = Stub.Make<IUserDataService>((m, a) => {
     savedWatches.Add((((IVideo)a![0]!).LocalID, ((IUser)a[1]!).LocalID));
     return Task.FromResult<IVideoUserData>(null!);
 });
+// TVCAST-001 contract v1: the cast agent and its settings are replaced by fakes, and every log line is captured.
+var castAgent = new FakeCastAgent();
+var castSettings = new FakeCastSettings();
+var capturedLogs = new CapturedLogs();
 using var host = await new HostBuilder().ConfigureWebHost(web => web.UseTestServer().ConfigureServices(services => {
-    services.AddRouting(); services.AddLogging(); services.AddSingleton(users); services.AddSingleton(videos); services.AddSingleton(userData);
+    services.AddRouting(); services.AddLogging(builder => builder.SetMinimumLevel(LogLevel.Trace).AddProvider(capturedLogs));
+    services.AddSingleton(users); services.AddSingleton(videos); services.AddSingleton(userData);
     services.AddAuthentication("test").AddScheme<AuthenticationSchemeOptions, TestAuthentication>("test", _ => { });
     services.AddAuthorization(); Plugin.RegisterServices(services, null!);
+    services.AddSingleton<ICastAgent>(castAgent); services.AddSingleton<ICastSettingsSource>(castSettings);
 }).Configure(app => {
     app.UseRouting(); app.UseAuthentication(); app.UseAuthorization(); Plugin.RegisterServices(app, null!);
     app.Run(async c => { c.Response.ContentType = c.Request.Path.StartsWithSegments("/api") ? "application/json" : "text/html";
@@ -171,9 +178,174 @@ Check(html.Contains("id=\"shoko-mpc-script\"") && Encoding.UTF8.GetByteCount(htm
 Check(await client.GetStringAsync("/api/test") == "{}", "API responses not modified");
 Check((await client.GetStringAsync(prefix + "/dashboard")).Contains("Download Windows Setup"), "setup page served");
 Check((await client.GetByteArrayAsync(prefix + "/Windows-Setup.zip")).Take(2).SequenceEqual(new byte[] { 80, 75 }), "Windows setup archive embedded");
+// ---- TVCAST-001 acceptance contract v1 (plugin side). Implementation agents must not edit below this line. ----
+var hexToken = new System.Text.RegularExpressions.Regex("[0-9a-f]{64}");
+const string agentSecret = "agent-secret-for-tests-0123456789abcdef";
+castSettings.Value = new CastSettings(new Uri("http://cast-agent.test:17300/"), agentSecret, new Uri("http://shoko-lan.test:8111/"));
+permitted = true; bookmarks[(9, 7)] = 15;
+async Task<HttpResponseMessage> CastCall(HttpMethod method, object? body = null, bool signedIn = true)
+{
+    var message = new HttpRequestMessage(method, prefix + "/cast");
+    if (body is not null) message.Content = JsonContent.Create(body);
+    if (signedIn) message.Headers.Add("apikey", "test");
+    return await client.SendAsync(message);
+}
+async Task<string?> ErrorOf(HttpResponseMessage reply) => (await reply.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString();
+
+// R3: same authentication and validation as /launch; nothing reaches the agent on a rejected request.
+Check((await CastCall(HttpMethod.Post, new { fileIds = new[] { 9 } }, signedIn: false)).StatusCode == HttpStatusCode.Unauthorized
+    && (await CastCall(HttpMethod.Get, signedIn: false)).StatusCode == HttpStatusCode.Unauthorized
+    && (await CastCall(HttpMethod.Delete, signedIn: false)).StatusCode == HttpStatusCode.Unauthorized, "cast-requires-auth");
+response = await CastCall(HttpMethod.Post, new { fileIds = Array.Empty<int>() });
+var seventeen = await CastCall(HttpMethod.Post, new { fileIds = Enumerable.Range(1, 17).ToArray() });
+var negative = await CastCall(HttpMethod.Post, new { fileIds = new[] { -9 } });
+Check(response.StatusCode == HttpStatusCode.BadRequest && seventeen.StatusCode == HttpStatusCode.BadRequest && negative.StatusCode == HttpStatusCode.BadRequest
+    && await ErrorOf(response) == "Choose between one and sixteen files.", "cast-rejects-0-and-17-files");
+var garbage = new HttpRequestMessage(HttpMethod.Post, prefix + "/cast") { Content = new StringContent("{not json", Encoding.UTF8, "application/json") };
+garbage.Headers.Add("apikey", "test");
+response = await client.SendAsync(garbage);
+Check(response.StatusCode == HttpStatusCode.BadRequest && await ErrorOf(response) == "Invalid cast request.", "cast-rejects-invalid-json");
+var oversized = new HttpRequestMessage(HttpMethod.Post, prefix + "/cast") { Content = new StringContent("{\"fileIds\":[9]," + new string(' ', 5000) + "}", Encoding.UTF8, "application/json") };
+oversized.Headers.Add("apikey", "test");
+Check((await client.SendAsync(oversized)).StatusCode == HttpStatusCode.RequestEntityTooLarge, "cast-rejects-body-over-4k");
+permitted = false;
+response = await CastCall(HttpMethod.Post, new { fileIds = new[] { 9 } });
+Check(response.StatusCode == HttpStatusCode.NotFound && await ErrorOf(response) == "This file is unavailable to your Shoko account.", "cast-rejects-hidden-series");
+permitted = true;
+Check((await CastCall(HttpMethod.Post, new { fileIds = new[] { 999 } })).StatusCode == HttpStatusCode.NotFound, "cast-rejects-unknown-file");
+// R18: multi-part episodes are refused before the agent is contacted.
+response = await CastCall(HttpMethod.Post, new { fileIds = new[] { 9, 10 } });
+Check(response.StatusCode == HttpStatusCode.BadRequest && await ErrorOf(response) == "Multi-part episodes can't play on the TV yet.", "cast-multipart-rejected");
+// R4: an unconfigured plugin answers 503 without contacting the agent.
+castSettings.Value = null;
+response = await CastCall(HttpMethod.Post, new { fileIds = new[] { 9 } });
+Check(response.StatusCode == HttpStatusCode.ServiceUnavailable && await ErrorOf(response) == "Set up TV casting in the plugin settings.", "cast-not-configured-503");
+castSettings.Value = new CastSettings(new Uri("http://cast-agent.test:17300/"), agentSecret, new Uri("http://shoko-lan.test:8111/"));
+Check(castAgent.Started.Count == 0 && castAgent.StopCalls == 0 && castAgent.StatusCalls == 0, "cast-no-agent-call-on-reject");
+
+// R4: a valid request sends LAN URLs with fresh capabilities and the saved resume position.
+response = await CastCall(HttpMethod.Post, new { fileIds = new[] { 9 } });
+var castBody = await response.Content.ReadAsStringAsync();
+Check(response.StatusCode == HttpStatusCode.Accepted && JsonDocument.Parse(castBody).RootElement.GetProperty("state").GetString() == "connecting", "cast-accepted-202-connecting");
+Check(!hexToken.IsMatch(castBody) && !castBody.Contains(agentSecret) && !castBody.Contains("shoko-lan.test"), "cast-response-has-no-token");
+var sent = castAgent.Started.Single();
+const string lanPrefix = "http://shoko-lan.test:8111/api/plugin/ShokoMpc";
+var mediaMatch = System.Text.RegularExpressions.Regex.Match(sent.MediaUrl, "^" + System.Text.RegularExpressions.Regex.Escape(lanPrefix) + "/stream/([0-9a-f]{64})/(.+)$");
+var progressMatch = System.Text.RegularExpressions.Regex.Match(sent.ProgressUrl, "^" + System.Text.RegularExpressions.Regex.Escape(lanPrefix) + "/progress/([0-9a-f]{64})/0$");
+var completeMatch = System.Text.RegularExpressions.Regex.Match(sent.CompleteUrl, "^" + System.Text.RegularExpressions.Regex.Escape(lanPrefix) + "/complete/([0-9a-f]{64})/0$");
+Check(mediaMatch.Success && progressMatch.Success && completeMatch.Success && progressMatch.Groups[1].Value == completeMatch.Groups[1].Value
+    && mediaMatch.Groups[1].Value != progressMatch.Groups[1].Value, "cast-sends-lan-url-and-resume: URL shapes");
+Check(sent.StartSeconds == 15 && sent.Title == "[Group] Show - 01 日本語.mkv"
+    && mediaMatch.Groups[2].Value == Uri.EscapeDataString("[Group] Show - 01 日本語.mkv"), "cast-sends-lan-url-and-resume: resume and title");
+var castRange = new HttpRequestMessage(HttpMethod.Get, new Uri(sent.MediaUrl).AbsolutePath); castRange.Headers.Range = new(2, 5);
+response = await client.SendAsync(castRange);
+Check(response.StatusCode == HttpStatusCode.PartialContent && await response.Content.ReadAsStringAsync() == "2345", "cast media capability streams with byte ranges");
+Check((await Report(new Uri(sent.ProgressUrl).AbsolutePath, 1, 40)).IsSuccessStatusCode && bookmarks[(9, 7)] == 40, "cast progress capability saves the bookmark");
+Check((await client.PostAsync(new Uri(sent.CompleteUrl).AbsolutePath, null)).IsSuccessStatusCode, "cast completion capability accepted");
+
+// R4 and R15: agent failures and status are reported in plain words.
+castAgent.Failure = new CastAgentUnavailableException("connection refused");
+response = await CastCall(HttpMethod.Post, new { fileIds = new[] { 9 } });
+var statusWhileDown = await CastCall(HttpMethod.Get);
+Check(response.StatusCode == HttpStatusCode.BadGateway && await ErrorOf(response) == "The TV caster is not responding."
+    && statusWhileDown.StatusCode == HttpStatusCode.BadGateway, "cast-agent-down-502");
+castAgent.Failure = null;
+castAgent.Status = new CastStatus(CastState.Playing, "Show - 01", 12.5, null);
+var status = await (await CastCall(HttpMethod.Get)).Content.ReadFromJsonAsync<JsonElement>();
+Check(status.GetProperty("state").GetString() == "playing" && status.GetProperty("title").GetString() == "Show - 01"
+    && status.GetProperty("positionSeconds").GetDouble() == 12.5, "cast-status-proxied");
+castAgent.Status = new CastStatus(CastState.Error, null, null, "The TV didn't answer. Put it in screen-mirroring mode and try again.");
+status = await (await CastCall(HttpMethod.Get)).Content.ReadFromJsonAsync<JsonElement>();
+Check(status.GetProperty("state").GetString() == "error"
+    && status.GetProperty("error").GetString() == "The TV didn't answer. Put it in screen-mirroring mode and try again.", "cast-status-error-text");
+response = await CastCall(HttpMethod.Delete);
+Check(response.StatusCode == HttpStatusCode.Accepted && castAgent.StopCalls == 1, "cast-stop-202");
+
+// R12: the plugin's own log categories never contain capabilities or the agent secret.
+var pluginLogs = capturedLogs.TextFor("ShokoMpc");
+Check(!hexToken.IsMatch(pluginLogs) && !pluginLogs.Contains(agentSecret), "cast-logs-have-no-token");
+
+// R4 and R11 (client side): CastAgentClient speaks I2 exactly and keeps the secret in the Authorization header.
+var agentHandler = new RecordingHandler();
+var agentClient = new CastAgentClient(new HttpClient(agentHandler), castSettings, TimeSpan.FromMilliseconds(300));
+agentHandler.Reply = _ => new HttpResponseMessage(HttpStatusCode.Accepted) { Content = new StringContent("{\"state\":\"connecting\"}", Encoding.UTF8, "application/json") };
+var started = await agentClient.StartAsync(new CastRequest("http://m/1", "T", 15, "http://m/p", "http://m/c"), CancellationToken.None);
+var startCall = agentHandler.Calls.Single();
+var startJson = JsonDocument.Parse(startCall.Body).RootElement;
+Check(startCall.Method == HttpMethod.Post && startCall.Uri == "http://cast-agent.test:17300/v1/cast" && startCall.Authorization == "Bearer " + agentSecret
+    && started.State == CastState.Connecting, "agent-client-post-v1-cast");
+Check(startJson.EnumerateObject().Select(p => p.Name).OrderBy(n => n).SequenceEqual(new[] { "completeUrl", "mediaUrl", "progressUrl", "startSeconds", "title" })
+    && startJson.GetProperty("mediaUrl").GetString() == "http://m/1" && startJson.GetProperty("startSeconds").GetDouble() == 15
+    && !startCall.Body.Contains(agentSecret), "agent-client-body-fields");
+agentHandler.Reply = _ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"state\":\"playing\",\"title\":\"T\",\"positionSeconds\":3}", Encoding.UTF8, "application/json") };
+var polled = await agentClient.GetStatusAsync(CancellationToken.None);
+Check(agentHandler.Calls.Last().Method == HttpMethod.Get && polled.State == CastState.Playing && polled.PositionSeconds == 3, "agent-client-get-status");
+agentHandler.Reply = _ => new HttpResponseMessage(HttpStatusCode.Accepted);
+await agentClient.StopAsync(CancellationToken.None);
+Check(agentHandler.Calls.Last().Method == HttpMethod.Delete && agentHandler.Calls.Last().Uri == "http://cast-agent.test:17300/v1/cast", "agent-client-delete");
+async Task<bool> ThrowsUnavailable(Func<Task> call) { try { await call(); return false; } catch (CastAgentUnavailableException) { return true; } }
+agentHandler.Reply = _ => new HttpResponseMessage(HttpStatusCode.InternalServerError);
+var on500 = await ThrowsUnavailable(() => agentClient.GetStatusAsync(CancellationToken.None));
+agentHandler.Reply = _ => throw new HttpRequestException("refused");
+var onRefused = await ThrowsUnavailable(() => agentClient.GetStatusAsync(CancellationToken.None));
+agentHandler.Reply = _ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"state\":\"dancing\"}", Encoding.UTF8, "application/json") };
+var onUnknownState = await ThrowsUnavailable(() => agentClient.GetStatusAsync(CancellationToken.None));
+agentHandler.Reply = _ => new HttpResponseMessage(HttpStatusCode.Unauthorized);
+var on401 = await ThrowsUnavailable(() => agentClient.StopAsync(CancellationToken.None));
+Check(on500 && onRefused && onUnknownState && on401, "agent-client-failures-become-unavailable");
+agentHandler.Delay = TimeSpan.FromSeconds(30);
+agentHandler.Reply = _ => new HttpResponseMessage(HttpStatusCode.OK);
+var timer = System.Diagnostics.Stopwatch.StartNew();
+var onTimeout = await ThrowsUnavailable(() => agentClient.GetStatusAsync(CancellationToken.None));
+Check(onTimeout && timer.Elapsed < TimeSpan.FromSeconds(3), "agent-client-timeout");
+Check(CastAgentClient.DefaultTimeout == TimeSpan.FromSeconds(5), "agent-client-default-timeout-5s");
+var registrations = new ServiceCollection(); Plugin.RegisterServices(registrations, null!);
+Check(registrations.Any(d => d.ServiceType == typeof(ICastAgent)) && registrations.Any(d => d.ServiceType == typeof(ICastSettingsSource)), "plugin-registers-cast-services");
+document = new HttpRequestMessage(HttpMethod.Get, "/webui/collection/series/216/episodes"); document.Headers.Accept.ParseAdd("text/html");
+Check((await (await client.SendAsync(document)).Content.ReadAsStringAsync()).Contains("id=\"shoko-mpc-script\""), "regression: Web UI injection unchanged");
 Console.WriteLine($"{passed} checks passed. ABI: {typeof(Shoko.Abstractions.Plugin.IPlugin).Assembly.GetName().Version}");
 
 public class FakeClock : TimeProvider { public DateTimeOffset Now = DateTimeOffset.UtcNow; public override DateTimeOffset GetUtcNow() => Now; }
+public class FakeCastAgent : ICastAgent
+{
+    public readonly List<CastRequest> Started = new();
+    public int StopCalls, StatusCalls;
+    public Exception? Failure;
+    public CastStatus Status = new(CastState.Idle, null, null, null);
+    public Task<CastStatus> StartAsync(CastRequest request, CancellationToken cancellation)
+    { if (Failure is not null) throw Failure; Started.Add(request); return Task.FromResult(new CastStatus(CastState.Connecting, request.Title, null, null)); }
+    public Task<CastStatus> GetStatusAsync(CancellationToken cancellation) { StatusCalls++; if (Failure is not null) throw Failure; return Task.FromResult(Status); }
+    public Task StopAsync(CancellationToken cancellation) { if (Failure is not null) throw Failure; StopCalls++; return Task.CompletedTask; }
+}
+public class FakeCastSettings : ICastSettingsSource { public CastSettings? Value; public CastSettings? Read() => Value; }
+public class CapturedLogs : ILoggerProvider
+{
+    private readonly List<(string Category, string Text)> lines = new();
+    public ILogger CreateLogger(string category) => new Sink(this, category);
+    public string TextFor(string categoryPrefix) { lock (lines) return string.Join("\n", lines.Where(l => l.Category.StartsWith(categoryPrefix)).Select(l => l.Text)); }
+    public void Dispose() { }
+    private sealed class Sink(CapturedLogs owner, string category) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel level) => true;
+        public void Log<TState>(LogLevel level, EventId id, TState state, Exception? error, Func<TState, Exception?, string> format)
+        { lock (owner.lines) owner.lines.Add((category, format(state, error) + " " + error)); }
+    }
+}
+public class RecordingHandler : HttpMessageHandler
+{
+    public sealed record Call(HttpMethod Method, string Uri, string? Authorization, string Body);
+    public readonly List<Call> Calls = new();
+    public Func<HttpRequestMessage, HttpResponseMessage> Reply = _ => new HttpResponseMessage(HttpStatusCode.OK);
+    public TimeSpan Delay = TimeSpan.Zero;
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellation)
+    {
+        var body = request.Content is null ? "" : await request.Content.ReadAsStringAsync(cancellation);
+        Calls.Add(new(request.Method, request.RequestUri!.ToString(), request.Headers.Authorization?.ToString(), body));
+        if (Delay > TimeSpan.Zero) await Task.Delay(Delay, cancellation);
+        return Reply(request);
+    }
+}
 public class Stub : DispatchProxy
 {
     public Func<MethodInfo, object?[]?, object?> Callback = null!;
