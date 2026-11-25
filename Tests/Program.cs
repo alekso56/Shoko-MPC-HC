@@ -382,12 +382,12 @@ Check(noSecret.StatusCode == HttpStatusCode.BadRequest && await ErrorOf(noSecret
 Check(!capturedLogs.TextFor("").Contains(savedSecret) && !capturedLogs.TextFor("").Contains(newSecret), "settings-secret-never-logged");
 Check(registrations.Any(d => d.ServiceType == typeof(ICastConfigurationStore)), "plugin-registers-settings-store");
 // ---- TVCAST-001 contract v2.1 (CR-11 stage 3, R29): cast targets in the plugin. Implementation agents must not edit this section. ----
-const string kontorId = "cast:uuid:25122fa3-2878-00e7-94b7-864c008fb318";
+const string kontorId = "cast:uuid:00000000-0000-4000-8000-000000000001";
 const string samsungId = "dlna:uuid:0f4c3a2e-1b2c-4d5e-8f90-aabbccddeeff";
 castSettings.Value = new CastSettings(new Uri("http://cast-agent.test:17300/"), agentSecret, new Uri("http://shoko-lan.test:8111/"));
 castAgent.Failure = null; permitted = true;
 castAgent.Targets = new[] { new CastTarget("miracast", "Wi-Fi Direct display", "miracast", true),
-    new CastTarget(kontorId, "Kontor", "cast", true), new CastTarget(samsungId, "Stue tv", "dlna", false) };
+    new CastTarget(kontorId, "Office streamer", "cast", true), new CastTarget(samsungId, "Living room TV", "dlna", false) };
 async Task<HttpResponseMessage> TargetsCall(bool signedIn = true)
 {
     var message = new HttpRequestMessage(HttpMethod.Get, prefix + "/cast/targets");
@@ -400,7 +400,7 @@ response = await TargetsCall();
 var targetsText = await response.Content.ReadAsStringAsync();
 var targetsJson = JsonDocument.Parse(targetsText).RootElement;
 Check(response.StatusCode == HttpStatusCode.OK && targetsJson.GetArrayLength() == 3
-    && targetsJson[1].GetProperty("id").GetString() == kontorId && targetsJson[1].GetProperty("name").GetString() == "Kontor"
+    && targetsJson[1].GetProperty("id").GetString() == kontorId && targetsJson[1].GetProperty("name").GetString() == "Office streamer"
     && targetsJson[1].GetProperty("kind").GetString() == "cast" && targetsJson[1].GetProperty("available").GetBoolean()
     && !targetsJson[2].GetProperty("available").GetBoolean() && !targetsText.Contains(agentSecret), "targets-listed");
 castSettings.Value = null;
@@ -438,10 +438,10 @@ castAgent.Status = new CastStatus(CastState.Idle, null, null, null);
 agentHandler.Delay = TimeSpan.Zero;
 agentHandler.Reply = _ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(
     "[{\"id\":\"miracast\",\"name\":\"Wi-Fi Direct display\",\"kind\":\"miracast\",\"available\":true}," +
-    "{\"id\":\"" + kontorId + "\",\"name\":\"Kontor\",\"kind\":\"cast\",\"available\":true}," +
+    "{\"id\":\"" + kontorId + "\",\"name\":\"Office streamer\",\"kind\":\"cast\",\"available\":true}," +
     "{\"id\":\"evil\",\"name\":\"Evil\",\"kind\":\"cast\",\"available\":true}," +
     "{\"id\":\"" + samsungId + "\",\"name\":\"" + new string('N', 65) + "\",\"kind\":\"dlna\",\"available\":false}," +
-    "{\"id\":\"" + samsungId + "\",\"name\":\"Stue tv\",\"kind\":\"toaster\",\"available\":false}]",
+    "{\"id\":\"" + samsungId + "\",\"name\":\"Living room TV\",\"kind\":\"toaster\",\"available\":false}]",
     Encoding.UTF8, "application/json") };
 var listed = await agentClient.GetTargetsAsync(CancellationToken.None);
 Check(agentHandler.Calls.Last().Method == HttpMethod.Get && agentHandler.Calls.Last().Uri == "http://cast-agent.test:17300/v1/targets"

@@ -4,12 +4,12 @@ const fs = require('fs');
 const path = require('path');
 const assert = require('node:assert/strict');
 const source = fs.readFileSync(path.join(__dirname, '../ShokoMpc/Web/webui.js'), 'utf8');
-const KONTOR = 'cast:uuid:25122fa3-2878-00e7-94b7-864c008fb318';
+const KONTOR = 'cast:uuid:00000000-0000-4000-8000-000000000001';
 const SAMSUNG = 'dlna:uuid:0f4c3a2e-1b2c-4d5e-8f90-aabbccddeeff';
 const TARGETS = [
   { id: 'miracast', name: 'Wi-Fi Direct display', kind: 'miracast', available: true },
-  { id: KONTOR, name: 'Kontor', kind: 'cast', available: true },
-  { id: SAMSUNG, name: 'Stue tv', kind: 'dlna', available: false },
+  { id: KONTOR, name: 'Office streamer', kind: 'cast', available: true },
+  { id: SAMSUNG, name: 'Living room TV', kind: 'dlna', available: false },
 ];
 
 // Contract v2.1 (CR-11 stage 3 test defect): every fixture window is closed at the end, so status polling can't keep Node alive.
@@ -82,7 +82,7 @@ function check(label, fn) { fn(); console.log('PASS: ' + label); passed++; }
     assert.equal(call[0].options.headers.apikey, 'fixture-key');
     assert.equal(p.menu().getAttribute('role'), 'menu');
     assert.equal(p.menuButton().getAttribute('aria-expanded'), 'true');
-    assert.deepEqual(p.items().map(i => i.textContent.trim()), ['Wi-Fi Direct display', 'Kontor', 'Stue tv (asleep)']);
+    assert.deepEqual(p.items().map(i => i.textContent.trim()), ['Wi-Fi Direct display', 'Office streamer', 'Living room TV (asleep)']);
     assert.deepEqual(p.items().map(i => i.getAttribute('aria-checked')), ['true', 'false', 'false']);
   });
 
@@ -90,9 +90,9 @@ function check(label, fn) { fn(); console.log('PASS: ' + label); passed++; }
   check('choosing-a-target-renames-the-button-and-remembers-it', () => {
     assert.equal(p.menu(), null);
     assert.equal(p.menuButton().getAttribute('aria-expanded'), 'false');
-    assert.equal(p.play().textContent, '▶ Kontor');
-    assert.equal(p.play().getAttribute('aria-label'), 'Play episode 123 on Kontor');
-    assert.deepEqual(JSON.parse(p.w.localStorage.getItem('shoko-cast-target')), { id: KONTOR, name: 'Kontor' });
+    assert.equal(p.play().textContent, '▶ Office streamer');
+    assert.equal(p.play().getAttribute('aria-label'), 'Play episode 123 on Office streamer');
+    assert.deepEqual(JSON.parse(p.w.localStorage.getItem('shoko-cast-target')), { id: KONTOR, name: 'Office streamer' });
   });
 
   p.play().click(); await wait();
@@ -102,18 +102,18 @@ function check(label, fn) { fn(); console.log('PASS: ' + label); passed++; }
     assert.deepEqual(JSON.parse(post[0].options.body), { fileIds: [9], targetId: KONTOR });
   });
   check('notice-names-the-target-while-connecting', () => {
-    assert.match(p.notice().textContent, /Connecting to Kontor…/);
+    assert.match(p.notice().textContent, /Connecting to Office streamer…/);
   });
   p.setAgent({ state: 'playing', title: 'Show - 01.mkv', positionSeconds: 12, target: KONTOR });
   await wait(2300);
   check('notice-names-the-target-while-playing', () => {
-    assert.match(p.notice().textContent, /Playing "Show - 01\.mkv" on Kontor/);
+    assert.match(p.notice().textContent, /Playing "Show - 01\.mkv" on Office streamer/);
   });
 
-  p = page({ remembered: JSON.stringify({ id: KONTOR, name: 'Kontor' }) });
+  p = page({ remembered: JSON.stringify({ id: KONTOR, name: 'Office streamer' }) });
   await wait();
   check('remembered-target-survives-a-reload', () => {
-    assert.equal(p.play().textContent, '▶ Kontor');
+    assert.equal(p.play().textContent, '▶ Office streamer');
     assert.equal(p.calls('/api/plugin/ShokoMpc/cast/targets', 'GET').length, 0);
   });
   p.d.getElementById('row').insertAdjacentHTML('beforeend', '<a href="https://anidb.net/episode/124">AniDB 2</a>');
@@ -121,7 +121,7 @@ function check(label, fn) { fn(); console.log('PASS: ' + label); passed++; }
   check('new-rows-use-the-remembered-target', () => {
     const buttons = [...p.d.querySelectorAll('.shoko-cast-play')];
     assert.equal(buttons.length, 2);
-    assert.ok(buttons.every(b => b.textContent === '▶ Kontor'));
+    assert.ok(buttons.every(b => b.textContent === '▶ Office streamer'));
     assert.equal(p.d.querySelectorAll('.shoko-cast-menu').length, 2);
   });
 
