@@ -14,18 +14,18 @@
   "icon": null,
   "releases": [
     {
-      "version": "0.4.0",
-      "tag": "v0.4.0",
+      "version": "0.4.1",
+      "tag": "v0.4.1",
       "source_revision": null,
       "released_at": "2026-11-25T00:00:00Z",
       "channel": "Stable",
-      "release_notes": "Cast episodes to a Miracast TV through a separate cast agent on your network. Adds a TV button and TV casting settings. No Windows Setup update needed. Targets Shoko 6 dev.550 / Abstractions alpha.112.",
+      "release_notes": "TV casting settings now live on the MPC-HC setup page, because current Shoko Web UI versions have no editor for plugin settings. Administrators can enter the agent URL, LAN base URL and agent secret there; the secret is never shown back. No Windows Setup update needed.",
       "archives": [
         {
           "runtime": "any",
           "abstraction": "6.0.0",
-          "url": "https://github.com/alekso56/Shoko-MPC-HC/releases/download/v0.4.0/ShokoMpc-v0.4.0-any.zip",
-          "checksum": "b9591c446b83d48ce1be49b42f91ec1e5246382943ba000bf9af9687d58ce747"
+          "url": "https://github.com/alekso56/Shoko-MPC-HC/releases/download/v0.4.1/ShokoMpc-v0.4.1-any.zip",
+          "checksum": "b647c68d408bbab29ae2b0b8eccb5317e9b42c8bd02c63df1c397dd703542d1c"
         }
       ]
     }
