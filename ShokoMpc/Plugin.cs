@@ -41,6 +41,7 @@ public sealed class Plugin : IPlugin<Plugin.Configuration>, IPluginServiceRegist
         services.AddSingleton<PlaybackTokens>();
         services.AddSingleton<CompletionSessions>();
         services.AddSingleton<IStartupFilter, WebUiStartupFilter>();
+        services.AddScoped<ICastConfigurationStore, CastConfigurationStore>();
         services.AddScoped<ICastSettingsSource, CastSettingsSource>();
         services.AddHttpClient<ICastAgent, CastAgentClient>(client => client.Timeout = CastAgentClient.DefaultTimeout)
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false })
@@ -53,6 +54,8 @@ public sealed class Plugin : IPlugin<Plugin.Configuration>, IPluginServiceRegist
             routes.MapPost(BasePath + "/cast", CastEndpoints.Start).RequireAuthorization();
             routes.MapGet(BasePath + "/cast", CastEndpoints.GetStatus).RequireAuthorization();
             routes.MapDelete(BasePath + "/cast", CastEndpoints.Stop).RequireAuthorization();
+            routes.MapGet(BasePath + "/cast/settings", CastSettingsEndpoints.Get).RequireAuthorization();
+            routes.MapPut(BasePath + "/cast/settings", CastSettingsEndpoints.Put).RequireAuthorization();
             routes.MapPost(BasePath + "/resolve/{token}", PlaybackEndpoints.Resolve);
             routes.MapPost(BasePath + "/complete/{token}/{part:int}", PlaybackEndpoints.Complete);
             routes.MapPost(BasePath + "/progress/{token}/{part:int}", PlaybackEndpoints.Progress);

@@ -36,11 +36,12 @@ Check(tokens.FindStream(streamToken) is null, "stream session expires");
 Check(tokens.Redeem("../invalid") is null && tokens.FindStream("invalid") is null, "malformed tokens rejected");
 
 bool permitted = true;
+bool isAdmin = true; // contract v1.5 (R23)
 var savedWatches = new List<(int File, int User)>();
 var bookmarks = new Dictionary<(int File, int User), double>();
 var positionWrites = 0;
 var series = Stub.Make<IShokoSeries>((_, _) => null);
-var user = Stub.Make<IUser>((m, _) => m.Name switch { "get_LocalID" => 7, "IsAllowedToSee" => permitted, _ => null });
+var user = Stub.Make<IUser>((m, _) => m.Name switch { "get_LocalID" => 7, "get_IsAdmin" => isAdmin, "IsAllowedToSee" => permitted, _ => null });
 var video = Stub.Make<IVideo>((m, _) => m.Name switch {
     "get_LocalID" => 9, "get_EarliestKnownName" => "[Group] Show - 01 日本語.mkv", "get_Series" => (IReadOnlyList<IShokoSeries>)new[] { series },
     "GetStream" => new MemoryStream(Encoding.UTF8.GetBytes("0123456789")), _ => null });
@@ -68,6 +69,7 @@ var userData = Stub.Make<IUserDataService>((m, a) => {
 // TVCAST-001 contract v1: the cast agent and its settings are replaced by fakes, and every log line is captured.
 var castAgent = new FakeCastAgent();
 var castSettings = new FakeCastSettings();
+var castStore = new FakeCastConfigurationStore(); // contract v1.5 (R23)
 var capturedLogs = new CapturedLogs();
 using var host = await new HostBuilder().ConfigureWebHost(web => web.UseTestServer().ConfigureServices(services => {
     services.AddRouting(); services.AddLogging(builder => builder.SetMinimumLevel(LogLevel.Trace).AddProvider(capturedLogs));
@@ -75,6 +77,7 @@ using var host = await new HostBuilder().ConfigureWebHost(web => web.UseTestServ
     services.AddAuthentication("test").AddScheme<AuthenticationSchemeOptions, TestAuthentication>("test", _ => { });
     services.AddAuthorization(); Plugin.RegisterServices(services, null!);
     services.AddSingleton<ICastAgent>(castAgent); services.AddSingleton<ICastSettingsSource>(castSettings);
+    services.AddSingleton<ICastConfigurationStore>(castStore);
 }).Configure(app => {
     app.UseRouting(); app.UseAuthentication(); app.UseAuthorization(); Plugin.RegisterServices(app, null!);
     app.Run(async c => { c.Response.ContentType = c.Request.Path.StartsWithSegments("/api") ? "application/json" : "text/html";
@@ -303,6 +306,81 @@ var registrations = new ServiceCollection(); Plugin.RegisterServices(registratio
 Check(registrations.Any(d => d.ServiceType == typeof(ICastAgent)) && registrations.Any(d => d.ServiceType == typeof(ICastSettingsSource)), "plugin-registers-cast-services");
 document = new HttpRequestMessage(HttpMethod.Get, "/webui/collection/series/216/episodes"); document.Headers.Accept.ParseAdd("text/html");
 Check((await (await client.SendAsync(document)).Content.ReadAsStringAsync()).Contains("id=\"shoko-mpc-script\""), "regression: Web UI injection unchanged");
+// ---- TVCAST-001 contract v1.5 (R23, CR-8): TV casting settings on the plugin's own page. Implementation agents must not edit this section. ----
+async Task<HttpResponseMessage> SettingsCall(HttpMethod method, object? body = null, bool signedIn = true)
+{
+    var message = new HttpRequestMessage(method, prefix + "/cast/settings");
+    if (body is not null) message.Content = JsonContent.Create(body);
+    if (signedIn) message.Headers.Add("apikey", "test");
+    return await client.SendAsync(message);
+}
+const string savedSecret = "saved-agent-secret-0123456789abcdefghijklmnop";
+castStore.Value = new Plugin.Configuration { AgentUrl = "http://cast-agent.test:17300/", AgentSecret = savedSecret, LanBaseUrl = "http://shoko-lan.test:8111" };
+castStore.Saves = 0; isAdmin = true;
+
+Check((await SettingsCall(HttpMethod.Get, signedIn: false)).StatusCode == HttpStatusCode.Unauthorized
+    && (await SettingsCall(HttpMethod.Put, new { agentUrl = "http://a.test/", lanBaseUrl = "http://b.test/" }, signedIn: false)).StatusCode == HttpStatusCode.Unauthorized
+    && castStore.Saves == 0, "settings-require-auth");
+
+isAdmin = false;
+var forbiddenGet = await SettingsCall(HttpMethod.Get);
+var forbiddenPut = await SettingsCall(HttpMethod.Put, new { agentUrl = "http://a.test/", lanBaseUrl = "http://b.test/", agentSecret = new string('x', 43) });
+Check(forbiddenGet.StatusCode == HttpStatusCode.Forbidden && forbiddenPut.StatusCode == HttpStatusCode.Forbidden
+    && await ErrorOf(forbiddenGet) == "Only Shoko administrators can change TV casting settings." && castStore.Saves == 0, "settings-admin-only");
+isAdmin = true;
+
+response = await SettingsCall(HttpMethod.Get);
+var settingsText = await response.Content.ReadAsStringAsync();
+json = JsonDocument.Parse(settingsText).RootElement;
+Check(response.StatusCode == HttpStatusCode.OK && json.GetProperty("agentUrl").GetString() == "http://cast-agent.test:17300/"
+    && json.GetProperty("lanBaseUrl").GetString() == "http://shoko-lan.test:8111" && json.GetProperty("secretSet").GetBoolean(), "settings-get-shows-urls");
+Check(!settingsText.Contains(savedSecret) && !json.TryGetProperty("agentSecret", out _), "settings-get-never-returns-secret");
+
+// An empty or missing secret keeps the saved one; URLs are trimmed.
+var keepEmpty = await SettingsCall(HttpMethod.Put, new { agentUrl = " http://cast-agent-2.test:17300/ ", lanBaseUrl = "http://shoko-lan.test:8111/", agentSecret = "" });
+var keepEmptyText = await keepEmpty.Content.ReadAsStringAsync();
+var keepMissing = await SettingsCall(HttpMethod.Put, new { agentUrl = "http://cast-agent-2.test:17300/", lanBaseUrl = "http://shoko-lan.test:8111/" });
+Check(keepEmpty.StatusCode == HttpStatusCode.OK && keepMissing.StatusCode == HttpStatusCode.OK && castStore.Saves == 2
+    && castStore.Value.AgentUrl == "http://cast-agent-2.test:17300/" && castStore.Value.LanBaseUrl == "http://shoko-lan.test:8111/"
+    && castStore.Value.AgentSecret == savedSecret && JsonDocument.Parse(keepEmptyText).RootElement.GetProperty("secretSet").GetBoolean()
+    && !keepEmptyText.Contains(savedSecret), "settings-put-keeps-secret-when-empty");
+
+const string newSecret = "new-agent-secret_0123456789~ABCDEFGHIJ+/=";
+response = await SettingsCall(HttpMethod.Put, new { agentUrl = "https://cast-agent.test/", lanBaseUrl = "http://shoko-lan.test:8111", agentSecret = newSecret });
+var replacedText = await response.Content.ReadAsStringAsync();
+Check(response.StatusCode == HttpStatusCode.OK && castStore.Saves == 3 && castStore.Value.AgentSecret == newSecret
+    && castStore.Value.AgentUrl == "https://cast-agent.test/" && castStore.Value.LanBaseUrl == "http://shoko-lan.test:8111"
+    && !replacedText.Contains(newSecret), "settings-put-replaces-secret");
+
+var savesBefore = castStore.Saves;
+var before = (castStore.Value.AgentUrl, castStore.Value.AgentSecret, castStore.Value.LanBaseUrl);
+var badAgent = await SettingsCall(HttpMethod.Put, new { agentUrl = "ftp://cast-agent.test/", lanBaseUrl = "http://shoko-lan.test:8111" });
+var badAgentQuery = await SettingsCall(HttpMethod.Put, new { agentUrl = "http://cast-agent.test/?x=1", lanBaseUrl = "http://shoko-lan.test:8111" });
+var badAgentUser = await SettingsCall(HttpMethod.Put, new { agentUrl = "http://user:pw@cast-agent.test/", lanBaseUrl = "http://shoko-lan.test:8111" });
+var badLan = await SettingsCall(HttpMethod.Put, new { agentUrl = "http://cast-agent.test/", lanBaseUrl = "shoko-lan.test" });
+var badSecretChars = await SettingsCall(HttpMethod.Put, new { agentUrl = "http://cast-agent.test/", lanBaseUrl = "http://shoko-lan.test:8111", agentSecret = new string('a', 40) + " $" });
+var shortSecret = await SettingsCall(HttpMethod.Put, new { agentUrl = "http://cast-agent.test/", lanBaseUrl = "http://shoko-lan.test:8111", agentSecret = new string('a', 31) });
+var notJson = new HttpRequestMessage(HttpMethod.Put, prefix + "/cast/settings") { Content = new StringContent("{", Encoding.UTF8, "application/json") };
+notJson.Headers.Add("apikey", "test");
+var badJson = await client.SendAsync(notJson);
+Check(badAgent.StatusCode == HttpStatusCode.BadRequest && await ErrorOf(badAgent) == "Enter a valid agent URL starting with http:// or https://."
+    && badAgentQuery.StatusCode == HttpStatusCode.BadRequest && badAgentUser.StatusCode == HttpStatusCode.BadRequest, "settings-reject-bad-agent-url");
+Check(badLan.StatusCode == HttpStatusCode.BadRequest && await ErrorOf(badLan) == "Enter a valid LAN base URL starting with http:// or https://.", "settings-reject-bad-lan-url");
+Check(badSecretChars.StatusCode == HttpStatusCode.BadRequest && shortSecret.StatusCode == HttpStatusCode.BadRequest
+    && await ErrorOf(shortSecret) == "The agent secret must be at least 32 characters: letters, digits or - . _ ~ + / =.", "settings-reject-bad-secret");
+Check(badJson.StatusCode == HttpStatusCode.BadRequest && await ErrorOf(badJson) == "Invalid settings.", "settings-reject-invalid-json");
+Check(castStore.Saves == savesBefore && (castStore.Value.AgentUrl, castStore.Value.AgentSecret, castStore.Value.LanBaseUrl) == before, "settings-rejections-save-nothing");
+
+castStore.Value = new Plugin.Configuration();
+var savesEmpty = castStore.Saves;
+response = await SettingsCall(HttpMethod.Get);
+json = await response.Content.ReadFromJsonAsync<JsonElement>();
+Check(response.StatusCode == HttpStatusCode.OK && json.GetProperty("agentUrl").GetString() == "" && json.GetProperty("lanBaseUrl").GetString() == ""
+    && !json.GetProperty("secretSet").GetBoolean(), "settings-get-empty-configuration");
+var noSecret = await SettingsCall(HttpMethod.Put, new { agentUrl = "http://cast-agent.test/", lanBaseUrl = "http://shoko-lan.test:8111" });
+Check(noSecret.StatusCode == HttpStatusCode.BadRequest && await ErrorOf(noSecret) == "Enter the agent secret." && castStore.Saves == savesEmpty, "settings-first-save-needs-secret");
+Check(!capturedLogs.TextFor("").Contains(savedSecret) && !capturedLogs.TextFor("").Contains(newSecret), "settings-secret-never-logged");
+Check(registrations.Any(d => d.ServiceType == typeof(ICastConfigurationStore)), "plugin-registers-settings-store");
 Console.WriteLine($"{passed} checks passed. ABI: {typeof(Shoko.Abstractions.Plugin.IPlugin).Assembly.GetName().Version}");
 
 public class FakeClock : TimeProvider { public DateTimeOffset Now = DateTimeOffset.UtcNow; public override DateTimeOffset GetUtcNow() => Now; }
@@ -318,6 +396,14 @@ public class FakeCastAgent : ICastAgent
     public Task StopAsync(CancellationToken cancellation) { if (Failure is not null) throw Failure; StopCalls++; return Task.CompletedTask; }
 }
 public class FakeCastSettings : ICastSettingsSource { public CastSettings? Value; public CastSettings? Read() => Value; }
+public class FakeCastConfigurationStore : ICastConfigurationStore
+{
+    public Plugin.Configuration Value = new();
+    public int Saves;
+    public Plugin.Configuration Load() => new() { AgentUrl = Value.AgentUrl, AgentSecret = Value.AgentSecret, LanBaseUrl = Value.LanBaseUrl };
+    public void Save(Plugin.Configuration configuration)
+    { Saves++; Value = new() { AgentUrl = configuration.AgentUrl, AgentSecret = configuration.AgentSecret, LanBaseUrl = configuration.LanBaseUrl }; }
+}
 public class CapturedLogs : ILoggerProvider
 {
     private readonly List<(string Category, string Text)> lines = new();

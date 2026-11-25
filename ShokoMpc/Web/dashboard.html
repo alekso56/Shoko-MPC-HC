@@ -1,10 +1,113 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MPC-HC · Shoko</title>
-<style>body{margin:0;background:#111925;color:#eaf1fb;font:16px/1.65 system-ui}main{max-width:800px;margin:48px auto;padding:0 24px}h1{font-size:36px;letter-spacing:-1px;margin:0}h2{font-size:20px}p{color:#b8c7db}section{background:#1b293d;border:1px solid #35465f;border-radius:14px;padding:22px;margin:22px 0}a{color:#8ed1ff}.download{display:inline-block;padding:10px 18px;background:#82ccff;color:#102030;text-decoration:none;border-radius:7px;font-weight:700}code{background:#0e1726;padding:3px 6px;border-radius:4px;overflow-wrap:anywhere}li{margin:10px 0}.tag{color:#8ed1ff;font-weight:600}small{color:#adc0d8}</style></head><body><main>
-<span class="tag">SHOKO MPC-HC · 0.4.0</span><h1>Your episodes, in MPC-HC.</h1>
+<style>body{margin:0;background:#111925;color:#eaf1fb;font:16px/1.65 system-ui}main{max-width:800px;margin:48px auto;padding:0 24px}h1{font-size:36px;letter-spacing:-1px;margin:0}h2{font-size:20px}p{color:#b8c7db}section{background:#1b293d;border:1px solid #35465f;border-radius:14px;padding:22px;margin:22px 0}a{color:#8ed1ff}.download{display:inline-block;padding:10px 18px;background:#82ccff;color:#102030;text-decoration:none;border-radius:7px;font-weight:700}code{background:#0e1726;padding:3px 6px;border-radius:4px;overflow-wrap:anywhere}li{margin:10px 0}.tag{color:#8ed1ff;font-weight:600}small{color:#adc0d8}
+#cast-settings label{display:block;margin:12px 0 4px}
+#cast-settings input{box-sizing:border-box;width:100%;padding:8px 12px;background:#0e1726;color:inherit;border:1px solid #60728d;border-radius:7px;font:inherit}
+#cast-settings input::placeholder{color:#adc0d8}
+#cast-save{margin-top:16px;border:0;font:inherit;font-weight:700;cursor:pointer}
+#cast-settings :disabled{opacity:.65;cursor:default}
+#cast-settings-status{margin:8px 0 0;min-height:1.65em}
+</style></head><body><main>
+<span class="tag">SHOKO MPC-HC · 0.4.1</span><h1>Your episodes, in MPC-HC.</h1>
 <p>Click <b>▶ MPC-HC</b> beside an episode in your Shoko collection. MPC-HC starts on your Windows PC, even when closed.</p>
 <section><h2>Set up this Windows PC once</h2><ol><li>Install MPC-HC if needed.</li><li>Download and extract Windows Setup to a folder.</li><li>Run <code>Install.cmd</code>. Set the Shoko server address below and select your MPC-HC executable. No administrator account is required.</li><li>Refresh the Shoko episode page, then click <b>▶ MPC-HC</b>. Allow the browser to open <b>Shoko MPC-HC</b>; if offered, remember the choice for this site.</li></ol>
 <p>Server address for this browser: <code id="server"></code></p><a id="download" class="download">Download Windows Setup</a></section>
+<section>
+  <h2>TV casting</h2>
+  <form id="cast-settings">
+    <label for="cast-agent-url">Agent URL</label>
+    <input id="cast-agent-url" type="text" inputmode="url" disabled>
+    <label for="cast-lan-url">LAN base URL</label>
+    <input id="cast-lan-url" type="text" inputmode="url" disabled>
+    <label for="cast-secret">Agent secret</label>
+    <input id="cast-secret" type="password" autocomplete="new-password" disabled>
+    <button id="cast-save" class="download" type="submit" disabled>Save</button>
+    <p id="cast-settings-status" role="status"></p>
+  </form>
+</section>
 <section><h2>What gets installed?</h2><p>A small <code>shoko-mpc:</code> link handler in your Windows user profile. It starts when a play link is opened and stays active to save playback position and watched status. It accepts links only from the server you configure, then starts your chosen MPC-HC executable. There is no installed Windows service or browser extension. The helper exits after syncing or closing the player.</p><p>The server plugin streams the original video with seeking support. Playback links are single-use and expire after 90 seconds; video sessions last 12 hours. Shoko API keys stay in Shoko's browser session.</p></section>
 <section><h2>If playback does not start</h2><ul><li>Use the <b>Open MPC-HC</b> link in the notification if your browser needs another click.</li><li>Re-run setup if the server address or MPC-HC location changes. The configured address must match the browser address exactly, including the port and any reverse-proxy prefix.</li><li>After restarting Shoko, click Play again to create a new video session.</li></ul><p>Episodes are marked watched for the account that launched playback when the player reaches 90%. Seeking past 90% also counts; every part of a split episode must reach the threshold. Stopping earlier leaves it unwatched. Update both this plugin and Windows Setup, then refresh Shoko to see watched changes. Your position is saved in Shoko every five seconds and when you pause or close the player. Reopening resumes from that position. Reaching 90% clears the bookmark so finished episodes start from the beginning. Update Windows Setup to enable resume. Embedded subtitles work as part of the original file; separate subtitle files are not handed over.</p><p>To remove the Windows handler, run <code>Uninstall.cmd</code> from Windows Setup. Disable or uninstall this plugin in Shoko and restart Shoko to remove its episode buttons.</p></section>
 <small>Built for Shoko 6.0.0-dev.550 / Abstractions 6.0.0-alpha.112 and Web UI 2.6.0-dev.153. The UI adapter follows AniDB episode links and may need an update if Shoko changes its episode layout.</small>
-</main><script>const base=location.pathname.replace(/\/api\/plugin\/ShokoMpc\/dashboard\/?$/,'');document.getElementById('server').textContent=location.origin+base;document.getElementById('download').href=base+'/api/plugin/ShokoMpc/Windows-Setup.zip';</script></body></html>
+</main><script>
+const base = location.pathname.replace(/\/api\/plugin\/ShokoMpc\/dashboard\/?$/, '');
+document.getElementById('server').textContent = location.origin + base;
+document.getElementById('download').href = base + '/api/plugin/ShokoMpc/Windows-Setup.zip';
+
+const form = document.getElementById('cast-settings');
+const agentUrl = document.getElementById('cast-agent-url');
+const lanBaseUrl = document.getElementById('cast-lan-url');
+const secret = document.getElementById('cast-secret');
+const save = document.getElementById('cast-save');
+const settingsStatus = document.getElementById('cast-settings-status');
+
+function setFormDisabled(disabled) {
+  for (const field of [agentUrl, lanBaseUrl, secret, save]) field.disabled = disabled;
+}
+
+function key() {
+  try {
+    const state = JSON.parse(sessionStorage.getItem('state') || '{}');
+    // Current tab state takes precedence, including an explicitly signed-out session.
+    if (state.apiSession) return state.apiSession.apikey || '';
+    return JSON.parse(localStorage.getItem('apiSession') || '{}').apikey || '';
+  } catch {
+    return '';
+  }
+}
+
+async function requestSettings(options = {}) {
+  const apikey = key();
+  if (!apikey) throw Object.assign(new Error('Sign in to Shoko first.'), { status: 401 });
+
+  const response = await fetch(base + '/api/plugin/ShokoMpc/cast/settings', {
+    ...options, credentials: 'same-origin', redirect: 'error',
+    headers: { apikey, ...options.headers }
+  });
+  const settings = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw Object.assign(new Error(settings?.error || ('Shoko returned HTTP ' + response.status + '.')), {
+      status: response.status
+    });
+  }
+  if (!settings) throw new Error('Shoko returned invalid settings.');
+  return settings;
+}
+
+function showSettings(settings) {
+  agentUrl.value = settings.agentUrl;
+  lanBaseUrl.value = settings.lanBaseUrl;
+  secret.placeholder = settings.secretSet ? 'Leave empty to keep the saved secret' : '';
+}
+
+async function loadSettings() {
+  try {
+    showSettings(await requestSettings());
+    setFormDisabled(false);
+  } catch (error) {
+    settingsStatus.textContent = error.message;
+  }
+}
+
+form.addEventListener('submit', async event => {
+  event.preventDefault();
+  if (save.disabled) return;
+
+  const settings = { agentUrl: agentUrl.value, lanBaseUrl: lanBaseUrl.value };
+  if (secret.value) settings.agentSecret = secret.value;
+  setFormDisabled(true);
+  settingsStatus.textContent = '';
+
+  try {
+    showSettings(await requestSettings({
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings)
+    }));
+    secret.value = '';
+    settingsStatus.textContent = 'Saved.';
+    setFormDisabled(false);
+  } catch (error) {
+    settingsStatus.textContent = error.message;
+    setFormDisabled(error.status === 401 || error.status === 403);
+  }
+});
+
+loadSettings();
+</script></body></html>

@@ -70,9 +70,12 @@ Version 0.4.0 adds a TV button beside the MPC-HC button. It sends the episode
 to a separate cast agent on your network, which plays it on a Miracast TV over
 Wi-Fi Direct with subtitles burned in. The agent is not part of this plugin;
 it runs on its own Linux machine with a Wi-Fi card that supports Wi-Fi Direct.
-In the plugin settings, open TV casting and enter the agent URL, the agent
-secret, and the LAN base URL the agent uses to reach Shoko. Until all three
-are set, the TV button says casting is not set up.
+As a Shoko administrator, open MPC-HC setup under Plugins and fill in TV
+casting: the agent URL, the agent secret, and the LAN base URL the agent uses
+to reach Shoko. Since version 0.4.1 the settings live there, because current
+Web UI versions have no editor for plugin settings. The secret is never shown
+back; leave it empty to keep the saved one. Until all three are set, the TV
+button says casting is not set up.
 Put the TV in mirroring mode, then click the TV button. The notice shows
 connecting, playing, stopped or an error, and offers Stop TV. One cast runs at
 a time; a new one replaces it. Position is saved to Shoko while casting, and
