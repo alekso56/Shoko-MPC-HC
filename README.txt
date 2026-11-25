@@ -65,6 +65,21 @@ Each file in a multipart episode has its own bookmark, restored when loaded.
 Update both the plugin and Windows Setup. Older handlers still play and sync
 watched status, but do not save or restore position.
 
+TV CASTING
+Version 0.4.0 adds a TV button beside the MPC-HC button. It sends the episode
+to a separate cast agent on your network, which plays it on a Miracast TV over
+Wi-Fi Direct with subtitles burned in. The agent is not part of this plugin;
+it runs on its own Linux machine with a Wi-Fi card that supports Wi-Fi Direct.
+In the plugin settings, open TV casting and enter the agent URL, the agent
+secret, and the LAN base URL the agent uses to reach Shoko. Until all three
+are set, the TV button says casting is not set up.
+Put the TV in mirroring mode, then click the TV button. The notice shows
+connecting, playing, stopped or an error, and offers Stop TV. One cast runs at
+a time; a new one replaces it. Position is saved to Shoko while casting, and
+reaching 90% marks the episode watched. Multi-part episodes cannot be cast yet.
+The browser never receives the agent secret or stream tokens. This release
+needs no Windows Setup update.
+
 SECURITY AND LIMITATIONS
 The server uses your existing Shoko browser session for launch authorization.
 The handler receives only an opaque, single-use ticket valid for 90 seconds.
@@ -75,9 +90,8 @@ Web UI. Configure HTTPS when using Shoko over an untrusted network.
 The handler pins the server address and rejects arbitrary URLs, executables,
 redirects, extra protocol parameters, and shell arguments. It never invokes
 a shell. Keep the setup folder and installed settings writable only by you.
-This release streams original video files, with byte-range seeking. It does
-not transcode or transfer
-separate subtitle files. Embedded subtitles remain in the original video.
+MPC-HC playback streams original video files, with byte-range seeking. It
+does not transcode or transfer separate subtitle files. Embedded subtitles remain in the original video.
 Watched-status writes use a separate expiring capability limited to this
 launch's files and account. Stream URLs cannot change watched status. The
 server checks permissions again and suppresses duplicate completion reports.
