@@ -3,7 +3,7 @@
     "jsdom": "^26.1.0"
   },
   "scripts": {
-    "test": "node ui.cjs && node cast-ui.cjs && node settings-ui.cjs"
+    "test": "node ui.cjs && node cast-ui.cjs && node settings-ui.cjs && node targets-ui.cjs"
   },
   "private": true
 }

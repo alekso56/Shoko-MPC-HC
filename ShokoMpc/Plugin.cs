@@ -43,7 +43,8 @@ public sealed class Plugin : IPlugin<Plugin.Configuration>, IPluginServiceRegist
         services.AddSingleton<IStartupFilter, WebUiStartupFilter>();
         services.AddScoped<ICastConfigurationStore, CastConfigurationStore>();
         services.AddScoped<ICastSettingsSource, CastSettingsSource>();
-        services.AddHttpClient<ICastAgent, CastAgentClient>(client => client.Timeout = CastAgentClient.DefaultTimeout)
+        // CastAgentClient applies a deadline per operation, including response body reads.
+        services.AddHttpClient<ICastAgent, CastAgentClient>(client => client.Timeout = Timeout.InfiniteTimeSpan)
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false })
             .RemoveAllLoggers();
     }
@@ -54,6 +55,7 @@ public sealed class Plugin : IPlugin<Plugin.Configuration>, IPluginServiceRegist
             routes.MapPost(BasePath + "/cast", CastEndpoints.Start).RequireAuthorization();
             routes.MapGet(BasePath + "/cast", CastEndpoints.GetStatus).RequireAuthorization();
             routes.MapDelete(BasePath + "/cast", CastEndpoints.Stop).RequireAuthorization();
+            routes.MapGet(BasePath + "/cast/targets", CastEndpoints.GetTargets).RequireAuthorization();
             routes.MapGet(BasePath + "/cast/settings", CastSettingsEndpoints.Get).RequireAuthorization();
             routes.MapPut(BasePath + "/cast/settings", CastSettingsEndpoints.Put).RequireAuthorization();
             routes.MapPost(BasePath + "/resolve/{token}", PlaybackEndpoints.Resolve);

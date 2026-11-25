@@ -381,6 +381,90 @@ var noSecret = await SettingsCall(HttpMethod.Put, new { agentUrl = "http://cast-
 Check(noSecret.StatusCode == HttpStatusCode.BadRequest && await ErrorOf(noSecret) == "Enter the agent secret." && castStore.Saves == savesEmpty, "settings-first-save-needs-secret");
 Check(!capturedLogs.TextFor("").Contains(savedSecret) && !capturedLogs.TextFor("").Contains(newSecret), "settings-secret-never-logged");
 Check(registrations.Any(d => d.ServiceType == typeof(ICastConfigurationStore)), "plugin-registers-settings-store");
+// ---- TVCAST-001 contract v2.1 (CR-11 stage 3, R29): cast targets in the plugin. Implementation agents must not edit this section. ----
+const string kontorId = "cast:uuid:25122fa3-2878-00e7-94b7-864c008fb318";
+const string samsungId = "dlna:uuid:0f4c3a2e-1b2c-4d5e-8f90-aabbccddeeff";
+castSettings.Value = new CastSettings(new Uri("http://cast-agent.test:17300/"), agentSecret, new Uri("http://shoko-lan.test:8111/"));
+castAgent.Failure = null; permitted = true;
+castAgent.Targets = new[] { new CastTarget("miracast", "Wi-Fi Direct display", "miracast", true),
+    new CastTarget(kontorId, "Kontor", "cast", true), new CastTarget(samsungId, "Stue tv", "dlna", false) };
+async Task<HttpResponseMessage> TargetsCall(bool signedIn = true)
+{
+    var message = new HttpRequestMessage(HttpMethod.Get, prefix + "/cast/targets");
+    if (signedIn) message.Headers.Add("apikey", "test");
+    return await client.SendAsync(message);
+}
+
+Check((await TargetsCall(signedIn: false)).StatusCode == HttpStatusCode.Unauthorized, "targets-require-auth");
+response = await TargetsCall();
+var targetsText = await response.Content.ReadAsStringAsync();
+var targetsJson = JsonDocument.Parse(targetsText).RootElement;
+Check(response.StatusCode == HttpStatusCode.OK && targetsJson.GetArrayLength() == 3
+    && targetsJson[1].GetProperty("id").GetString() == kontorId && targetsJson[1].GetProperty("name").GetString() == "Kontor"
+    && targetsJson[1].GetProperty("kind").GetString() == "cast" && targetsJson[1].GetProperty("available").GetBoolean()
+    && !targetsJson[2].GetProperty("available").GetBoolean() && !targetsText.Contains(agentSecret), "targets-listed");
+castSettings.Value = null;
+response = await TargetsCall();
+Check(response.StatusCode == HttpStatusCode.ServiceUnavailable && await ErrorOf(response) == "Set up TV casting in the plugin settings.", "targets-need-setup");
+castSettings.Value = new CastSettings(new Uri("http://cast-agent.test:17300/"), agentSecret, new Uri("http://shoko-lan.test:8111/"));
+castAgent.Failure = new CastAgentUnavailableException("down");
+response = await TargetsCall();
+Check(response.StatusCode == HttpStatusCode.BadGateway && await ErrorOf(response) == "The TV caster is not responding.", "targets-agent-down-502");
+castAgent.Failure = null;
+
+castAgent.Started.Clear();
+response = await CastCall(HttpMethod.Post, new { fileIds = new[] { 9 }, targetId = kontorId });
+Check(response.StatusCode == HttpStatusCode.Accepted && castAgent.Started.Single().Target == kontorId, "cast-passes-target");
+response = await CastCall(HttpMethod.Post, new { fileIds = new[] { 9 } });
+Check(response.StatusCode == HttpStatusCode.Accepted && castAgent.Started.Last().Target is null, "cast-without-target");
+var startedBefore = castAgent.Started.Count;
+var badTargets = new object[] { "../../etc", "cast:uuid:" + new string('x', 100), "", 7, "miracast:extra" };
+var allRejected = true;
+foreach (var bad in badTargets)
+{
+    var reply = await CastCall(HttpMethod.Post, new { fileIds = new[] { 9 }, targetId = bad });
+    allRejected &= reply.StatusCode == HttpStatusCode.BadRequest && await ErrorOf(reply) == "Invalid cast request.";
+}
+Check(allRejected && castAgent.Started.Count == startedBefore, "cast-rejects-bad-target");
+castAgent.Failure = new CastTargetRejectedException("Unknown cast target.");
+response = await CastCall(HttpMethod.Post, new { fileIds = new[] { 9 }, targetId = kontorId });
+Check(response.StatusCode == HttpStatusCode.BadRequest && await ErrorOf(response) == "Unknown cast target.", "cast-relays-target-rejection");
+castAgent.Failure = null;
+castAgent.Status = new CastStatus(CastState.Playing, "Show - 01.mkv", 30, null, kontorId);
+response = await CastCall(HttpMethod.Get);
+Check((await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("target").GetString() == kontorId, "cast-status-has-target");
+castAgent.Status = new CastStatus(CastState.Idle, null, null, null);
+
+agentHandler.Delay = TimeSpan.Zero;
+agentHandler.Reply = _ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(
+    "[{\"id\":\"miracast\",\"name\":\"Wi-Fi Direct display\",\"kind\":\"miracast\",\"available\":true}," +
+    "{\"id\":\"" + kontorId + "\",\"name\":\"Kontor\",\"kind\":\"cast\",\"available\":true}," +
+    "{\"id\":\"evil\",\"name\":\"Evil\",\"kind\":\"cast\",\"available\":true}," +
+    "{\"id\":\"" + samsungId + "\",\"name\":\"" + new string('N', 65) + "\",\"kind\":\"dlna\",\"available\":false}," +
+    "{\"id\":\"" + samsungId + "\",\"name\":\"Stue tv\",\"kind\":\"toaster\",\"available\":false}]",
+    Encoding.UTF8, "application/json") };
+var listed = await agentClient.GetTargetsAsync(CancellationToken.None);
+Check(agentHandler.Calls.Last().Method == HttpMethod.Get && agentHandler.Calls.Last().Uri == "http://cast-agent.test:17300/v1/targets"
+    && agentHandler.Calls.Last().Authorization == "Bearer " + agentSecret
+    && listed.Select(t => t.Id).SequenceEqual(new[] { "miracast", kontorId }), "agent-client-targets");
+agentHandler.Reply = _ => new HttpResponseMessage(HttpStatusCode.Accepted) { Content = new StringContent("{\"state\":\"connecting\"}", Encoding.UTF8, "application/json") };
+await agentClient.StartAsync(new CastRequest("http://m/1", "T", 15, "http://m/p", "http://m/c", kontorId), CancellationToken.None);
+Check(JsonDocument.Parse(agentHandler.Calls.Last().Body).RootElement.GetProperty("target").GetString() == kontorId, "agent-client-sends-target");
+async Task<Exception?> StartFailure(string body)
+{
+    agentHandler.Reply = _ => new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+    try { await agentClient.StartAsync(new CastRequest("http://m/1", "T", 15, "http://m/p", "http://m/c", kontorId), CancellationToken.None); return null; }
+    catch (Exception error) { return error; }
+}
+var unknownTarget = await StartFailure("{\"error\":\"Unknown cast target.\"}");
+var unsupported = await StartFailure("{\"error\":\"This TV type isn't supported yet.\"}");
+var otherError = await StartFailure("{\"error\":\"Invalid cast request.\"}");
+Check(unknownTarget is CastTargetRejectedException { Message: "Unknown cast target." }
+    && unsupported is CastTargetRejectedException { Message: "This TV type isn't supported yet." }
+    && otherError is CastAgentUnavailableException, "agent-client-target-rejection");
+Check(CastAgentClient.TargetsTimeout == TimeSpan.FromSeconds(10), "agent-client-targets-timeout-10s");
+document = new HttpRequestMessage(HttpMethod.Get, prefix + "/cast/targets");
+Check((await client.SendAsync(document)).StatusCode == HttpStatusCode.Unauthorized, "targets-route-registered-with-auth");
 Console.WriteLine($"{passed} checks passed. ABI: {typeof(Shoko.Abstractions.Plugin.IPlugin).Assembly.GetName().Version}");
 
 public class FakeClock : TimeProvider { public DateTimeOffset Now = DateTimeOffset.UtcNow; public override DateTimeOffset GetUtcNow() => Now; }
@@ -390,6 +474,9 @@ public class FakeCastAgent : ICastAgent
     public int StopCalls, StatusCalls;
     public Exception? Failure;
     public CastStatus Status = new(CastState.Idle, null, null, null);
+    public IReadOnlyList<CastTarget> Targets = Array.Empty<CastTarget>();
+    public Task<IReadOnlyList<CastTarget>> GetTargetsAsync(CancellationToken cancellation)
+    { if (Failure is not null) throw Failure; return Task.FromResult(Targets); }
     public Task<CastStatus> StartAsync(CastRequest request, CancellationToken cancellation)
     { if (Failure is not null) throw Failure; Started.Add(request); return Task.FromResult(new CastStatus(CastState.Connecting, request.Title, null, null)); }
     public Task<CastStatus> GetStatusAsync(CancellationToken cancellation) { StatusCalls++; if (Failure is not null) throw Failure; return Task.FromResult(Status); }

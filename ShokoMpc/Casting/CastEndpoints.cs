@@ -16,6 +16,8 @@ internal static class CastEndpoints
     private static readonly JsonSerializerOptions json = new(JsonSerializerDefaults.Web);
     private static readonly Regex capability = new("[0-9a-fA-F]{64}");
 
+    private sealed record StartRequest(int[] FileIds, JsonElement TargetId);
+
     public static Task Start(HttpContext context) => Run(context, StartCast);
 
     public static Task GetStatus(HttpContext context) => Run(context, async context =>
@@ -31,8 +33,20 @@ internal static class CastEndpoints
             state = status.State.ToString().ToLowerInvariant(),
             title = SafeStatusText(status.Title, settings.AgentSecret),
             positionSeconds = status.PositionSeconds,
-            error = SafeStatusText(status.Error, settings.AgentSecret)
+            error = SafeStatusText(status.Error, settings.AgentSecret),
+            target = CastTarget.IsValidId(status.Target) ? status.Target : null
         }, json, context.RequestAborted);
+    });
+
+    public static Task GetTargets(HttpContext context) => Run(context, async context =>
+    {
+        if (await ReadSettings(context) is null)
+        {
+            return;
+        }
+
+        var targets = await Agent(context).GetTargetsAsync(context.RequestAborted);
+        await context.Response.WriteAsJsonAsync(targets, json, context.RequestAborted);
     });
 
     public static Task Stop(HttpContext context) => Run(context, async context =>
@@ -100,7 +114,7 @@ internal static class CastEndpoints
         CastRequest cast;
         try
         {
-            cast = await CreateCastRequest(context, settings.LanBaseUrl, user!, videos[0]!, request.FileIds);
+            cast = await CreateCastRequest(context, settings.LanBaseUrl, user!, videos[0]!, request);
         }
         catch (InvalidOperationException)
         {
@@ -108,7 +122,16 @@ internal static class CastEndpoints
             return;
         }
 
-        await Agent(context).StartAsync(cast, context.RequestAborted);
+        try
+        {
+            await Agent(context).StartAsync(cast, context.RequestAborted);
+        }
+        catch (CastTargetRejectedException error)
+        {
+            await Error(context, 400, error.Message);
+            return;
+        }
+
         await WriteState(context, "connecting");
     }
 
@@ -123,7 +146,7 @@ internal static class CastEndpoints
         return settings;
     }
 
-    private static async Task<PlaybackEndpoints.LaunchRequest?> ReadRequest(HttpContext context)
+    private static async Task<StartRequest?> ReadRequest(HttpContext context)
     {
         var request = context.Request;
         if (request.ContentLength > CastAgentClient.MaxRequestBytes)
@@ -138,7 +161,7 @@ internal static class CastEndpoints
             return null;
         }
 
-        PlaybackEndpoints.LaunchRequest? payload;
+        StartRequest? payload;
         try
         {
             // Read one extra byte so requests without a Content-Length are limited too.
@@ -150,14 +173,20 @@ internal static class CastEndpoints
                 return null;
             }
 
-            payload = JsonSerializer.Deserialize<PlaybackEndpoints.LaunchRequest>(body.AsSpan(0, length), json);
+            payload = JsonSerializer.Deserialize<StartRequest>(body.AsSpan(0, length), json);
+            if (payload is { TargetId.ValueKind: not JsonValueKind.Undefined } &&
+                (payload.TargetId.ValueKind != JsonValueKind.String || !CastTarget.IsValidId(payload.TargetId.GetString())))
+            {
+                await Error(context, 400, InvalidRequest);
+                return null;
+            }
         }
         catch (BadHttpRequestException error) when (error.StatusCode == 413)
         {
             await Error(context, 413, "Request too large.");
             return null;
         }
-        catch (Exception error) when (error is JsonException or BadHttpRequestException)
+        catch (Exception error) when (error is JsonException or BadHttpRequestException or InvalidOperationException)
         {
             await Error(context, 400, InvalidRequest);
             return null;
@@ -172,11 +201,13 @@ internal static class CastEndpoints
         return payload;
     }
 
-    private static async Task<CastRequest> CreateCastRequest(HttpContext context, Uri lanBaseUrl, IUser user, IVideo video, int[] fileIds)
+    private static async Task<CastRequest> CreateCastRequest(HttpContext context, Uri lanBaseUrl, IUser user, IVideo video, StartRequest request)
     {
         var services = context.RequestServices;
         var lanPrefix = lanBaseUrl.AbsoluteUri.TrimEnd('/') + Plugin.BasePath;
         var title = PlaybackEndpoints.DisplayFileName(video);
+        var fileIds = request.FileIds;
+        var targetId = request.TargetId.ValueKind == JsonValueKind.String ? request.TargetId.GetString() : null;
         var streamToken = services.GetRequiredService<PlaybackTokens>().IssueStream(user.LocalID, fileIds[0]);
         var sessions = services.GetRequiredService<CompletionSessions>();
         await sessions.ProgressGate.WaitAsync(context.RequestAborted);
@@ -186,7 +217,7 @@ internal static class CastEndpoints
             var data = services.GetRequiredService<IUserDataService>();
             var startSeconds = data.GetVideoUserData(video, user)?.ProgressPosition.TotalSeconds ?? 0;
             return new($"{lanPrefix}/stream/{streamToken}/{Uri.EscapeDataString(title)}", title, startSeconds,
-                $"{lanPrefix}/progress/{sessionToken}/0", $"{lanPrefix}/complete/{sessionToken}/0");
+                $"{lanPrefix}/progress/{sessionToken}/0", $"{lanPrefix}/complete/{sessionToken}/0", targetId);
         }
         finally
         {

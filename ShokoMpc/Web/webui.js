@@ -7,6 +7,8 @@
   const api = base + '/api/plugin/ShokoMpc';
   const server = location.origin + base;
   const buttons = new Map();
+  const castTargetKey = 'shoko-cast-target';
+  const castTargetId = /^(miracast|(dlna|cast):uuid:[0-9A-Za-z-]{8,64})$/;
   let scheduled = false;
   let frame = 0;
   let castNotice;
@@ -16,7 +18,21 @@
   let castPending = false;
   let castActive = false;
   let castReplacing = false;
+  let rememberedTarget = readCastTarget();
+  let activeCastTarget;
+  let castMenu;
   let lastCast;
+  function readCastTarget() {
+    try {
+      const target = JSON.parse(localStorage.getItem(castTargetKey));
+      if (target && typeof target === 'object' && !Array.isArray(target) &&
+          typeof target.id === 'string' && castTargetId.test(target.id) &&
+          typeof target.name === 'string' && target.name.length > 0) {
+        return { id: target.id, name: target.name };
+      }
+    } catch {}
+    return null;
+  }
   function key() {
     try {
       const state = JSON.parse(sessionStorage.getItem('state') || '{}');
@@ -107,12 +123,14 @@
   function showCastStatus(status) {
     castActive = ['connecting', 'playing', 'stopping'].includes(status.state);
     if (status.state !== 'connecting') castReplacing = false;
+    const tvName = activeCastTarget && (!status.target || status.target === activeCastTarget.id)
+      ? activeCastTarget.name : 'the TV';
     switch (status.state) {
       case 'connecting':
-        showCastNotice(castReplacing ? 'Switching the TV to this episode…' : 'Connecting to the TV…');
+        showCastNotice(castReplacing ? 'Switching ' + tvName + ' to this episode…' : 'Connecting to ' + tvName + '…');
         break;
       case 'playing':
-        showCastNotice(status.title ? 'Playing "' + status.title + '" on the TV' : 'Playing on the TV');
+        showCastNotice((status.title ? 'Playing "' + status.title + '"' : 'Playing') + ' on ' + tvName);
         break;
       case 'stopping':
         showCastNotice('Stopping the TV…', { canStop: false });
@@ -143,6 +161,7 @@
   async function playOnTv(episodeId, button) {
     if (castPending) return;
     castPending = true;
+    const target = rememberedTarget;
     const revision = pauseCastPolling();
     lastCast = { episodeId, button };
     button.disabled = true; button.textContent = 'Starting…';
@@ -151,8 +170,11 @@
       const files = [...new Set(playlist.flatMap(item => (item.Parts || []).map(part => part.ID)))];
       if (!files.length) throw new Error('No playable file was found for this episode.');
       if (files.length > 1) throw new Error("Multi-part episodes can't play on the TV yet.");
+      const body = { fileIds: files };
+      if (target) body.targetId = target.id;
       await request(api + '/cast', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileIds: files }) });
+        body: JSON.stringify(body) });
+      activeCastTarget = target;
       castReplacing = castActive;
       if (revision === castRevision) {
         castPolling = true;
@@ -164,7 +186,8 @@
       if (revision === castRevision) showCastNotice(error.message || 'Could not start TV playback.', { canRetry: true });
     } finally {
       castPending = false;
-      button.disabled = false; button.textContent = '▶ TV';
+      button.disabled = false;
+      labelTvButton(episodeId, button);
       if (revision === castRevision) scheduleCastPoll();
     }
   }
@@ -182,19 +205,123 @@
       if (revision === castRevision) scheduleCastPoll();
     }
   }
-  function tvButton(id, mpcButton) {
-    const button = document.createElement('button'); button.type = 'button'; button.textContent = '▶ TV';
-    button.className = 'shoko-cast-play'; button.title = 'Play this episode on the TV';
-    button.setAttribute('aria-label', 'Play episode ' + id + ' on the TV');
+  function labelTvButton(id, button) {
+    const name = rememberedTarget?.name;
+    if (!button.disabled) button.textContent = '▶ ' + (name ?? 'TV');
+    button.title = 'Play this episode on ' + (name ?? 'the TV');
+    button.setAttribute('aria-label', 'Play episode ' + id + ' on ' + (name ?? 'the TV'));
+  }
+  function closeCastMenu(restoreFocus = false) {
+    if (!castMenu) return;
+    const { element, opener } = castMenu;
+    castMenu = undefined;
+    element.remove();
+    opener.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) opener.focus();
+  }
+  function positionCastMenu() {
+    if (!castMenu) return;
+    const { element, opener } = castMenu;
+    const anchor = opener.getBoundingClientRect();
+    const { offsetWidth: width, offsetHeight: height } = element;
+    const below = anchor.bottom + 4;
+    const top = below + height <= innerHeight - 8 ? below : anchor.top - height - 4;
+    element.style.top = Math.max(8, top) + 'px';
+    element.style.left = Math.max(8, Math.min(anchor.right, innerWidth - 8) - width) + 'px';
+  }
+  function showTargetMenuMessage(menu, message) {
+    const status = document.createElement('div');
+    status.setAttribute('role', 'status');
+    status.textContent = message;
+    menu.replaceChildren(status);
+  }
+  async function toggleCastMenu(opener) {
+    const wasOpen = castMenu?.opener === opener;
+    closeCastMenu();
+    if (wasOpen) return;
+
+    const menu = document.createElement('div');
+    menu.id = 'shoko-cast-targets';
+    menu.tabIndex = -1;
+    menu.setAttribute('role', 'menu');
+    menu.setAttribute('aria-label', 'Choose a TV');
+    Object.assign(menu.style, { position: 'fixed', zIndex: '2147483647', boxSizing: 'border-box',
+      minWidth: '150px', maxWidth: 'min(280px, calc(100vw - 16px))', maxHeight: 'calc(100vh - 16px)',
+      overflow: 'auto', overflowWrap: 'anywhere', padding: '6px', borderRadius: '5px', color: '#edf3fc',
+      background: '#172236', border: '1px solid #526481', boxShadow: '0 5px 25px #0005', font: '14px/1.5 system-ui' });
+    showTargetMenuMessage(menu, 'Looking for TVs…');
+    document.body.append(menu);
+    castMenu = { element: menu, opener };
+    opener.setAttribute('aria-expanded', 'true');
+    positionCastMenu();
+    menu.focus({ preventScroll: true });
+
+    try {
+      const targets = await request(api + '/cast/targets');
+      if (castMenu?.element !== menu) return;
+      if (!targets.length) {
+        showTargetMenuMessage(menu, 'No TVs found.');
+      } else {
+        const selectedId = rememberedTarget?.id ?? 'miracast';
+        menu.replaceChildren();
+        for (const { id, name, available } of targets) {
+          const item = document.createElement('button');
+          item.type = 'button';
+          item.tabIndex = -1;
+          item.setAttribute('role', 'menuitemradio');
+          item.setAttribute('aria-checked', String(id === selectedId));
+          item.textContent = name + (available ? '' : ' (asleep)');
+          item.style.cssText = opener.style.cssText;
+          Object.assign(item.style, { display: 'block', width: '100%', margin: '0 0 4px', textAlign: 'left',
+            whiteSpace: 'normal', fontWeight: id === selectedId ? 'bold' : 'normal' });
+          item.onclick = () => {
+            rememberedTarget = { id, name };
+            try { localStorage.setItem(castTargetKey, JSON.stringify(rememberedTarget)); } catch {}
+            for (const row of buttons.values()) labelTvButton(row.id, row.tv);
+            closeCastMenu(true);
+          };
+          menu.append(item);
+        }
+        (menu.querySelector('[aria-checked="true"]') ?? menu.firstElementChild).focus({ preventScroll: true });
+      }
+    } catch (error) {
+      if (castMenu?.element !== menu) return;
+      showTargetMenuMessage(menu, error.message || 'Could not list TVs.');
+    }
+    positionCastMenu();
+  }
+  function tvButtons(id, mpcButton) {
+    const button = document.createElement('button'); button.type = 'button';
+    button.className = 'shoko-cast-play';
+    labelTvButton(id, button);
     button.style.cssText = mpcButton.style.cssText;
     button.style.marginLeft = '4px';
     button.onclick = event => { event.preventDefault(); event.stopPropagation(); void playOnTv(id, button); };
     mpcButton.insertAdjacentElement('afterend', button);
-    return button;
+
+    const menuButton = document.createElement('button'); menuButton.type = 'button';
+    menuButton.className = 'shoko-cast-menu'; menuButton.textContent = '▾';
+    menuButton.setAttribute('aria-label', 'Choose a TV');
+    menuButton.setAttribute('aria-haspopup', 'menu');
+    menuButton.setAttribute('aria-expanded', 'false');
+    menuButton.style.cssText = mpcButton.style.cssText;
+    menuButton.style.marginLeft = '2px';
+    menuButton.onclick = event => { event.preventDefault(); event.stopPropagation(); void toggleCastMenu(menuButton); };
+    button.insertAdjacentElement('afterend', menuButton);
+    return { tv: button, menuButton };
+  }
+  function removeButtons(row) {
+    if (castMenu?.opener === row.menuButton) closeCastMenu();
+    row.button.remove();
+    row.tv.remove();
+    row.menuButton.remove();
   }
   function scan() {
     scheduled = false;
-    if (!/\/collection\/series\/\d+(?:\/|$)/.test(location.pathname)) return;
+    if (!/\/collection\/series\/\d+(?:\/|$)/.test(location.pathname)) {
+      closeCastMenu();
+      return;
+    }
     const episodeLinks = new Set();
     for (const anchor of document.querySelectorAll('a[href]')) {
       let url; try { url = new URL(anchor.href); } catch { continue; }
@@ -209,9 +336,12 @@
         if (previous.button.nextElementSibling !== previous.tv) {
           previous.button.insertAdjacentElement('afterend', previous.tv);
         }
+        if (previous.tv.nextElementSibling !== previous.menuButton) {
+          previous.tv.insertAdjacentElement('afterend', previous.menuButton);
+        }
         continue;
       }
-      if (previous) { previous.button.remove(); previous.tv.remove(); }
+      if (previous) removeButtons(previous);
       const button = document.createElement('button'); button.type = 'button'; button.textContent = '▶ MPC-HC';
       button.className = 'shoko-mpc-play'; button.title = 'Play this episode in MPC-HC';
       button.setAttribute('aria-label', 'Play episode ' + id + ' in MPC-HC');
@@ -219,11 +349,12 @@
         color: 'inherit', background: 'transparent', cursor: 'pointer', font: 'inherit', whiteSpace: 'nowrap' });
       button.onclick = event => { event.preventDefault(); event.stopPropagation(); void play(id, button); };
       anchor.insertAdjacentElement('afterend', button);
-      buttons.set(anchor, { id, button, tv: tvButton(id, button) });
+      buttons.set(anchor, { id, button, ...tvButtons(id, button) });
     }
     for (const [anchor, previous] of buttons) {
       if (episodeLinks.has(anchor)) continue;
-      previous.button.remove(); previous.tv.remove(); buttons.delete(anchor);
+      removeButtons(previous);
+      buttons.delete(anchor);
     }
   }
   function schedule() { if (!scheduled) { scheduled = true; frame = requestAnimationFrame(scan); } }
@@ -232,7 +363,34 @@
   addEventListener('pagehide', () => { observer.disconnect(); cancelAnimationFrame(frame); scheduled = false; });
   addEventListener('pageshow', () => { observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['href'] }); schedule(); });
   addEventListener('pagehide', pauseCastPolling);
+  addEventListener('pagehide', () => closeCastMenu());
   addEventListener('pageshow', scheduleCastPoll);
   addEventListener('popstate', schedule);
+  addEventListener('resize', positionCastMenu);
+  document.addEventListener('scroll', positionCastMenu, true);
+  document.addEventListener('click', event => {
+    if (castMenu && !castMenu.element.contains(event.target) && !castMenu.opener.contains(event.target)) closeCastMenu();
+  }, true);
+  document.addEventListener('keydown', event => {
+    if (!castMenu) return;
+    if (event.key === 'Escape' || event.key === 'Tab') {
+      if (event.key === 'Escape') event.preventDefault();
+      closeCastMenu(true);
+      return;
+    }
+    const { element } = castMenu;
+    if (!element.contains(event.target) || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    const items = [...element.querySelectorAll('[role="menuitemradio"]')];
+    if (!items.length) return;
+    event.preventDefault();
+    const current = items.indexOf(document.activeElement);
+    let next = 0;
+    switch (event.key) {
+      case 'End': next = items.length - 1; break;
+      case 'ArrowDown': next = (current + 1) % items.length; break;
+      case 'ArrowUp': next = current > 0 ? current - 1 : items.length - 1; break;
+    }
+    items[next].focus();
+  }, true);
   schedule();
 })();
